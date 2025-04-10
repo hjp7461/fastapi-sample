@@ -1,0 +1,129 @@
+"""
+상품 관련 API 엔드포인트.
+HTTP 요청을 처리하고 적절한 서비스를 호출합니다.
+"""
+from typing import List, Optional, Any
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+
+from app.core.exceptions import NotFoundException, ValidationException, BusinessLogicException
+from app.di.containers import Container
+from app.api.dependencies import get_current_user, get_current_active_admin
+from app.product.schemas import (
+    ProductCreate, ProductUpdate, ProductResponse, ProductInventoryUpdate
+)
+from app.product.domain import ProductCategory
+from app.product.service import ProductService
+
+
+router = APIRouter()
+
+
+@router.post("/", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
+async def create_product(
+    product_in: ProductCreate,
+    product_service: ProductService = Depends(lambda: Container.product_service()),
+    current_user: Any = Depends(get_current_active_admin)
+) -> Any:
+    """새 상품을 생성합니다. (관리자 전용)"""
+    try:
+        product = await product_service.create_product(product_in.dict())
+        return product
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.get("/{product_id}", response_model=ProductResponse)
+async def get_product_by_id(
+    product_id: int,
+    product_service: ProductService = Depends(lambda: Container.product_service())
+) -> Any:
+    """특정 상품 정보를 조회합니다."""
+    try:
+        return await product_service.get_product(product_id)
+    except NotFoundException as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+
+
+@router.put("/{product_id}", response_model=ProductResponse)
+async def update_product(
+    product_id: int,
+    product_in: ProductUpdate,
+    product_service: ProductService = Depends(lambda: Container.product_service()),
+    current_user: Any = Depends(get_current_active_admin)
+) -> Any:
+    """상품 정보를 업데이트합니다. (관리자 전용)"""
+    try:
+        return await product_service.update_product(
+            product_id,
+            product_in.dict(exclude_unset=True)
+        )
+    except NotFoundException as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+
+
+@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_product(
+    product_id: int,
+    product_service: ProductService = Depends(lambda: Container.product_service()),
+    current_user: Any = Depends(get_current_active_admin)
+) -> None:
+    """상품을 삭제합니다. (관리자 전용)"""
+    try:
+        await product_service.delete_product(product_id)
+    except NotFoundException as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+
+
+@router.get("/", response_model=List[ProductResponse])
+async def list_products(
+    skip: int = 0,
+    limit: int = 100,
+    category: Optional[ProductCategory] = None,
+    is_active: Optional[bool] = Query(None, description="활성화 상태 필터링"),
+    product_service: ProductService = Depends(lambda: Container.product_service())
+) -> Any:
+    """상품 목록을 조회합니다."""
+    return await product_service.list_products(
+        skip=skip,
+        limit=limit,
+        category=category,
+        is_active=is_active
+    )
+
+
+@router.patch("/{product_id}/inventory", response_model=ProductResponse)
+async def update_product_inventory(
+    product_id: int,
+    inventory_update: ProductInventoryUpdate,
+    product_service: ProductService = Depends(lambda: Container.product_service()),
+    current_user: Any = Depends(get_current_active_admin)
+) -> Any:
+    """상품 재고를 업데이트합니다. (관리자 전용)"""
+    try:
+        return await product_service.update_inventory(
+            product_id,
+            inventory_update.quantity_change
+        )
+    except NotFoundException as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except BusinessLogicException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )

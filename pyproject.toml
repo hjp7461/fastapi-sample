@@ -1,0 +1,126 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# 패키지 이름과 디렉토리 이름이 다른 경우
+# my_project 아래 app 폴더 안에 main.py가 포함된 소스 디렉토리 이기 때문에 app으로 지정 .
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+#만약 소스 코드가 src/my_project 디렉토리에 있다면, 다음과 같이 설정합니다.
+#[tool.hatch.build.targets.wheel]
+#packages = ["src/my_project"]
+
+# 만약 특정 파일만 포함하고 싶다면 include 설정을 사용합니다.
+#[tool.hatch.build.targets.wheel]
+#include = ["my_project", "README.md"] # my_project 디렉토리와 README.md 파일 포함
+
+[project]
+name = "my-project"
+version = "0.1.0"
+description = "FastAPI 클린 아키텍처 예제 애플리케이션"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Your Name", email = "your.email@example.com" }
+]
+
+dependencies = [
+    # FastAPI 및 관련 라이브러리
+    "fastapi>=0.95.1",
+    "uvicorn[standard]>=0.22.0",
+    "python-multipart>=0.0.6",
+    "email-validator>=2.0.0",
+
+    # 데이터베이스 및 ORM
+    "sqlalchemy>=2.0.0",
+    "sqlmodel>=0.0.8",
+    "alembic>=1.10.4",
+    "aiosqlite>=0.18.0",
+    "greenlet>=2.0.2",
+
+    # 인증 및 보안
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "pyjwt>=2.6.0",
+
+    # 설정 및 유틸리티
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+
+    # 의존성 주입
+    "dependency-injector>=4.41.0",
+
+    # HTTP 클라이언트
+    "httpx>=0.24.0",
+
+    # 로깅
+    "loguru>=0.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=23.3.0",
+    "isort>=5.12.0",
+    "mypy>=1.2.0",
+    "ruff>=0.0.261",
+]
+
+test = [
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.26.0",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.24.0",
+    "pytest-html>=4.1.1",
+    "pytest-tornasync>=0.6.0.post2",
+    "pytest-trio>=0.8.0",
+    "pytest-twisted>=1.14.3",
+    "twisted>=24.11.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_reexport = true
+strict_optional = true
+
+[[tool.mypy.overrides]]
+module = ["sqlalchemy.*", "sqlmodel.*", "alembic.*", "dependency_injector.*", "jose.*", "passlib.*", "loguru.*"]
+ignore_missing_imports = true
+
+[cltool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib",
+]
+pythonpath = [
+  "."
+]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+select = ["E", "F", "B", "I"]
+ignore = []

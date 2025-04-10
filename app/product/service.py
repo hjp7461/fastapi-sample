@@ -1,0 +1,90 @@
+"""
+상품 서비스 구현.
+비즈니스 로직과 유즈케이스를 포함합니다.
+"""
+from typing import List, Optional, Dict, Any, Union
+from decimal import Decimal
+
+from app.core.exceptions import NotFoundException, ValidationException, BusinessLogicException
+from app.product.domain import Product, ProductCategory
+from app.product.repository import ProductRepository
+
+
+class ProductService:
+    """
+    상품 관련 비즈니스 로직을 처리하는 서비스.
+    """
+
+    def __init__(self, product_repository: ProductRepository):
+        self.product_repository = product_repository
+
+    async def create_product(self, product_data: Dict[str, Any]) -> Product:
+        """새 상품을 생성합니다."""
+        product = Product(
+            name=product_data["name"],
+            description=product_data.get("description"),
+            price=product_data["price"],
+            category=product_data.get("category", ProductCategory.OTHER),
+            inventory=product_data.get("inventory", 0),
+            is_active=product_data.get("is_active", True)
+        )
+
+        return await self.product_repository.create(product)
+
+    async def get_product(self, product_id: int) -> Product:
+        """ID로 상품을 조회합니다."""
+        product = await self.product_repository.get_by_id(product_id)
+        if not product:
+            raise NotFoundException(f"Product with ID {product_id} not found")
+        return product
+
+    async def update_product(self, product_id: int, product_data: Dict[str, Any]) -> Product:
+        """상품 정보를 업데이트합니다."""
+        product = await self.product_repository.update(product_id, product_data)
+        if not product:
+            raise NotFoundException(f"Product with ID {product_id} not found")
+
+        return product
+
+    async def delete_product(self, product_id: int) -> bool:
+        """상품을 삭제합니다."""
+        # 삭제 전 존재 확인
+        product = await self.product_repository.get_by_id(product_id)
+        if not product:
+            raise NotFoundException(f"Product with ID {product_id} not found")
+
+        return await self.product_repository.delete(product_id)
+
+    async def list_products(
+            self,
+            skip: int = 0,
+            limit: int = 100,
+            category: Optional[ProductCategory] = None,
+            is_active: Optional[bool] = None
+    ) -> List[Product]:
+        """상품 목록을 조회합니다."""
+        return await self.product_repository.list(
+            skip=skip,
+            limit=limit,
+            category=category,
+            is_active=is_active
+        )
+
+    async def update_inventory(self, product_id: int, quantity_change: int) -> Product:
+        """상품 재고를 업데이트합니다."""
+        # 먼저 상품이 존재하는지 확인
+        product = await self.product_repository.get_by_id(product_id)
+        if not product:
+            raise NotFoundException(f"Product with ID {product_id} not found")
+
+        # 재고가 부족한지 확인 (재고 감소 시)
+        if quantity_change < 0 and abs(quantity_change) > product.inventory:
+            raise BusinessLogicException(f"Not enough inventory for product {product_id}")
+
+        # 재고 업데이트
+        updated_product = await self.product_repository.update_inventory(
+            product_id,
+            quantity_change
+        )
+
+        return updated_product
