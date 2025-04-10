@@ -311,3 +311,4 @@ cython_debug/
 .idea/
 .june/
 app.db
+/reports/
