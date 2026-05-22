@@ -40,6 +40,23 @@ def get_password_hash(password: str) -> str:
     return hashed.decode("utf-8")
 
 
+def needs_rehash(hashed_password: str) -> bool:
+    """저장된 해시의 라운드가 현재 settings.BCRYPT_ROUNDS 와 다른지 확인.
+
+    저장된 해시 형식: $2b$<rounds>$<22-char-salt><31-char-hash>
+    파싱 실패 시 보수적으로 False (재해시 안 함) 반환 — 인증 흐름 깨지지 않도록.
+
+    True 면 lazy rehash 대상 (authenticate_user 에서 자동 업그레이드).
+    """
+    try:
+        parts = hashed_password.split("$")
+        # 형식: ['', '2b', '<rounds>', '<salt+hash>']
+        stored_rounds = int(parts[2])
+    except (IndexError, ValueError):
+        return False
+    return stored_rounds != settings.BCRYPT_ROUNDS
+
+
 def create_access_token(
         subject: Union[str, Any], expires_delta: Optional[timedelta] = None
 ) -> str:

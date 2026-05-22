@@ -5,7 +5,7 @@
 import bcrypt
 
 from app.core.config import settings
-from app.core.security import get_password_hash, verify_password
+from app.core.security import get_password_hash, needs_rehash, verify_password
 
 
 # passlib 1.7.4 + bcrypt 가 생성한 실제 해시 (마이그레이션 PR 시점에 박제).
@@ -73,3 +73,28 @@ def test_verify_works_across_different_rounds():
     assert verify_password(plain, default_round_hash) is True
     assert verify_password("wrong", low_round_hash) is False
     assert verify_password("wrong", default_round_hash) is False
+
+
+def test_needs_rehash_detects_different_rounds():
+    """현재 settings 와 다른 라운드의 해시는 재해시 대상."""
+    plain = "test_password"
+    # 의도적으로 다른 라운드로 해시 (settings 가 12 이면 4 와 다름)
+    low_round = bcrypt.hashpw(
+        plain.encode("utf-8"), bcrypt.gensalt(rounds=4)
+    ).decode("utf-8")
+
+    assert needs_rehash(low_round) is True
+
+
+def test_needs_rehash_returns_false_for_current_rounds():
+    """현재 settings 라운드와 동일한 해시는 재해시 대상이 아님."""
+    hashed = get_password_hash("test_password")
+    assert needs_rehash(hashed) is False
+
+
+def test_needs_rehash_returns_false_for_malformed_hash():
+    """잘못된 형식의 해시는 보수적으로 False (재해시 안 함)."""
+    assert needs_rehash("not-a-bcrypt-hash") is False
+    assert needs_rehash("") is False
+    # parts[2] 가 정수로 변환 불가
+    assert needs_rehash("$2b$abc$xxx") is False

@@ -5,7 +5,12 @@
 from typing import List, Optional, Dict, Any, Union
 from datetime import timedelta
 
-from app.core.security import get_password_hash, verify_password, create_access_token
+from app.core.security import (
+    create_access_token,
+    get_password_hash,
+    needs_rehash,
+    verify_password,
+)
 from app.core.config import settings
 from app.core.exceptions import NotFoundException, ValidationException
 from app.user.domain import User, UserRole
@@ -21,12 +26,30 @@ class UserService:
         self.user_repository = user_repository
 
     async def authenticate_user(self, email: str, password: str) -> Optional[User]:
-        """사용자 인증을 처리합니다."""
+        """사용자 인증을 처리합니다.
+
+        verify 성공 후 저장된 해시의 라운드가 settings.BCRYPT_ROUNDS 와 다르면
+        백그라운드로 새 라운드로 재해시한다 (lazy upgrade).
+        """
         user = await self.user_repository.get_by_email(email)
         if not user:
             return None
         if not verify_password(password, user.hashed_password):
             return None
+
+        # 점진적 재해시: 라운드 불일치 시 백그라운드 업그레이드
+        if needs_rehash(user.hashed_password):
+            try:
+                new_hash = get_password_hash(password)
+                await self.user_repository.update(
+                    user.id, {"hashed_password": new_hash}
+                )
+                user.hashed_password = new_hash
+            except Exception:
+                # 재해시 실패는 인증 자체를 막지 않음 (백그라운드 작업).
+                # 운영 환경에서는 logger.exception(...) 등으로 모니터링 권장.
+                pass
+
         return user
 
     async def create_user(self, user_data: Dict[str, Any]) -> User:
