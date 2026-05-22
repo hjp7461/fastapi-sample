@@ -8,6 +8,7 @@ from decimal import Decimal
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import BusinessLogicException
 from app.product.domain import Product, ProductCategory
 from app.product.models import ProductModel
 
@@ -106,36 +107,43 @@ class ProductRepository:
         return [self._to_domain(product) for product in result.scalars().all()]
 
     async def update_inventory(self, product_id: int, quantity_change: int) -> Optional[Product]:
+        """원자적 재고 변경.
+
+        조건부 단일 UPDATE 로 race condition 을 차단한다.
+        `inventory + quantity_change >= 0` 조건이 DB 레벨에서 평가되므로
+        동시 차감 시에도 음수 재고가 발생할 수 없다.
+
+        반환:
+            Product : 갱신 성공
+            None    : 상품 없음
+        예외:
+            BusinessLogicException : 재고 부족 (변경 시 음수 발생)
         """
-        상품 재고를 업데이트합니다.
-        quantity_change: 양수면 재고 증가, 음수면 재고 감소
-        """
-        # 먼저 상품이 존재하는지 확인
         result = await self.session.execute(
-            select(ProductModel).where(ProductModel.id == product_id)
-        )
-        db_product = result.scalars().first()
-        if not db_product:
-            return None
-
-        # 재고 업데이트
-        new_inventory = db_product.inventory + quantity_change
-        if new_inventory < 0:
-            new_inventory = 0
-
-        await self.session.execute(
             update(ProductModel)
             .where(ProductModel.id == product_id)
-            .values(inventory=new_inventory)
+            .where(ProductModel.inventory + quantity_change >= 0)
+            .values(inventory=ProductModel.inventory + quantity_change)
         )
         await self.session.commit()
 
-        # 업데이트된 상품 조회
-        result = await self.session.execute(
+        if result.rowcount == 0:
+            # 상품 없음 vs 재고 부족 구분
+            select_result = await self.session.execute(
+                select(ProductModel).where(ProductModel.id == product_id)
+            )
+            db_product = select_result.scalars().first()
+            if db_product is None:
+                return None
+            raise BusinessLogicException(
+                f"Not enough inventory for product {product_id}"
+            )
+
+        # 갱신된 결과 재조회
+        select_result = await self.session.execute(
             select(ProductModel).where(ProductModel.id == product_id)
         )
-        db_product = result.scalars().first()
-
+        db_product = select_result.scalars().first()
         return self._to_domain(db_product)
 
     def _to_domain(self, db_product: ProductModel) -> Product:

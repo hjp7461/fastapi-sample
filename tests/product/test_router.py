@@ -227,6 +227,86 @@ async def test_update_inventory_as_admin(
     assert data["inventory"] == initial_inventory + inventory_update["quantity_change"]
 
 
+@pytest.mark.asyncio
+async def test_update_inventory_exact_zero(
+        client: AsyncClient,
+        admin_auth_headers: Dict[str, str],
+        test_product: Dict[str, Any],
+):
+    """quantity_change 가 현재 재고와 정확히 일치 → 200 + inventory=0."""
+    # test_product fixture: inventory=10
+    product_id = test_product["id"]
+    response = await client.patch(
+        f"/api/v1/products/{product_id}/inventory",
+        headers=admin_auth_headers,
+        json={"quantity_change": -10},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["inventory"] == 0
+
+
+@pytest.mark.asyncio
+async def test_update_inventory_insufficient(
+        client: AsyncClient,
+        admin_auth_headers: Dict[str, str],
+        test_product: Dict[str, Any],
+):
+    """현재 재고보다 1 많이 차감 시도 → 400 + 재고는 그대로."""
+    # test_product fixture: inventory=10
+    product_id = test_product["id"]
+    response = await client.patch(
+        f"/api/v1/products/{product_id}/inventory",
+        headers=admin_auth_headers,
+        json={"quantity_change": -11},
+    )
+
+    assert response.status_code == 400
+    data = response.json()
+    assert "detail" in data
+
+    # silent failure 방지: 재고가 변경되지 않았는지 확인
+    get_response = await client.get(f"/api/v1/products/{product_id}")
+    assert get_response.status_code == 200
+    assert get_response.json()["inventory"] == 10
+
+
+@pytest.mark.asyncio
+async def test_update_inventory_concurrent_deduction(
+        client: AsyncClient,
+        admin_auth_headers: Dict[str, str],
+        test_product: Dict[str, Any],
+):
+    """동시 차감 2건 (-10, -10) 시 정확히 1건만 200, 1건은 400.
+
+    StaticPool 단일 커넥션 환경이라 실제 OS 레벨 race 재현은 어렵지만,
+    조건부 UPDATE 의 시멘틱이 정상 동작하는지 구조적으로 검증한다.
+    """
+    import asyncio
+
+    product_id = test_product["id"]
+    # test_product fixture: inventory=10
+    responses = await asyncio.gather(
+        client.patch(
+            f"/api/v1/products/{product_id}/inventory",
+            headers=admin_auth_headers,
+            json={"quantity_change": -10},
+        ),
+        client.patch(
+            f"/api/v1/products/{product_id}/inventory",
+            headers=admin_auth_headers,
+            json={"quantity_change": -10},
+        ),
+    )
+
+    statuses = sorted(r.status_code for r in responses)
+    assert statuses == [200, 400], f"기대: [200, 400], 실제: {statuses}"
+
+    # 최종 재고는 0 (음수 아님)
+    get_response = await client.get(f"/api/v1/products/{product_id}")
+    assert get_response.json()["inventory"] == 0
+
+
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_delete_product_as_admin(
         client: AsyncClient,
