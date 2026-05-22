@@ -3,6 +3,7 @@
 """
 import os
 from typing import List, Optional
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
@@ -26,6 +27,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-for-jwt")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    BCRYPT_ROUNDS: int = int(os.getenv("BCRYPT_ROUNDS", "12"))
 
     # 데이터베이스 설정
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./app.db")
@@ -37,6 +39,16 @@ class Settings(BaseSettings):
         "http://localhost:3000",  # React 앱
         "http://localhost:8000",  # FastAPI 앱
     ]
+
+    @field_validator("BCRYPT_ROUNDS")
+    @classmethod
+    def validate_bcrypt_rounds(cls, v: int) -> int:
+        """bcrypt 표준 범위 검증 (4 ≤ rounds ≤ 31)."""
+        if not (4 <= v <= 31):
+            raise ValueError(
+                f"BCRYPT_ROUNDS must be between 4 and 31, got {v}"
+            )
+        return v
 
     model_config = {
         "env_file": ".env",

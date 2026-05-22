@@ -2,6 +2,9 @@
 
 특히 passlib 시절에 생성된 해시의 호환성을 보장한다.
 """
+import bcrypt
+
+from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
 
 
@@ -41,3 +44,32 @@ def test_verify_handles_malformed_hash():
     assert verify_password("password", "not-a-bcrypt-hash") is False
     assert verify_password("password", "") is False
     assert verify_password("password", "$2b$short") is False
+
+
+def test_get_password_hash_uses_configured_rounds():
+    """get_password_hash 가 settings.BCRYPT_ROUNDS 를 사용한다."""
+    hashed = get_password_hash("test_password")
+    # bcrypt 해시 형식: $2b$<rounds>$<salt+hash>
+    parts = hashed.split("$")
+    actual_rounds = int(parts[2])
+    assert actual_rounds == settings.BCRYPT_ROUNDS
+
+
+def test_verify_works_across_different_rounds():
+    """라운드가 다른 두 해시를 동일 verify 함수로 검증 가능 (호환성).
+
+    라운드 업그레이드 시 기존 해시 (낮은 라운드) 가 새 settings 와 무관하게
+    검증되어야 한다.
+    """
+    plain = "samePassword"
+
+    # 명시적으로 다른 라운드로 해시
+    low_round_hash = bcrypt.hashpw(
+        plain.encode("utf-8"), bcrypt.gensalt(rounds=10)
+    ).decode("utf-8")
+    default_round_hash = get_password_hash(plain)
+
+    assert verify_password(plain, low_round_hash) is True
+    assert verify_password(plain, default_round_hash) is True
+    assert verify_password("wrong", low_round_hash) is False
+    assert verify_password("wrong", default_round_hash) is False
