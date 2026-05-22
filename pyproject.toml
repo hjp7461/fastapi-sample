@@ -74,10 +74,6 @@ test = [
     "pytest-cov>=4.1.0",
     "httpx>=0.24.0",
     "pytest-html>=4.1.1",
-    "pytest-tornasync>=0.6.0.post2",
-    "pytest-trio>=0.8.0",
-    "pytest-twisted>=1.14.3",
-    "twisted>=24.11.0",
 ]
 
 [tool.black]
