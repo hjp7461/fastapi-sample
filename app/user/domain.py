@@ -35,6 +35,14 @@ class User:
             return f"{self.first_name} {self.last_name}"
         return self.username
 
+    def is_admin(self) -> bool:
+        """ADMIN 전용 권한 보유 여부."""
+        return self.role == UserRole.ADMIN
+
+    def is_staff_or_above(self) -> bool:
+        """STAFF 이상 권한 보유 여부 (권한 계층: STAFF ⊂ ADMIN)."""
+        return self.role in (UserRole.STAFF, UserRole.ADMIN)
+
     def can_manage_products(self) -> bool:
-        """사용자가 상품을 관리할 수 있는지 확인합니다."""
-        return self.role in (UserRole.ADMIN, UserRole.STAFF)
+        """상품 관리 권한. STAFF 이상이면 가능."""
+        return self.is_staff_or_above()

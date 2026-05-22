@@ -7,6 +7,8 @@ from httpx import AsyncClient
 from typing import Dict, Any
 from decimal import Decimal
 
+from app.user.domain import UserRole
+
 
 # pytest 8.3.5에서는 이제 Test 클래스 대신 함수에 직접 마커를 적용합니다
 # pytestmark = pytest.mark.asyncio  # 불필요
@@ -24,7 +26,7 @@ async def test_get_product(client, test_product):
         "password_confirm": "adminpassword",
         "first_name": "Admin",
         "last_name": "User",
-        "role": "admin",  # 관리자 역할 지정
+        "role": UserRole.ADMIN.value,  # 관리자 역할 지정
         "is_active": True
     }
 

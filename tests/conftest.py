@@ -16,6 +16,7 @@ from app.core.database import Base
 from app.di.containers import Container
 from app.main import app as fastapi_app
 from app.product.models import ProductModel
+from app.user.domain import UserRole
 from app.user.models import UserModel
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
@@ -134,14 +135,14 @@ async def admin_user(db_session):
         "username": "adminuser",
         "email": "admin@example.com",
         "password": "adminpassword",
-        "role": "admin",
+        "role": UserRole.ADMIN.value,
     }
     db_user = UserModel(
         username=user_data["username"],
         email=user_data["email"],
         hashed_password=get_password_hash(user_data["password"]),
         is_active=True,
-        role=user_data["role"],
+        role=UserRole.ADMIN,
     )
     db_session.add(db_user)
     await db_session.commit()
