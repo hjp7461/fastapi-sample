@@ -63,7 +63,7 @@ async def get_current_active_admin(
     """
     현재 인증된 사용자가 관리자인지 확인합니다.
     """
-    if current_user.role != "admin":
+    if not current_user.is_admin():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions"
