@@ -25,7 +25,7 @@ async def create_user(
 ) -> Any:
     """새 사용자를 생성합니다."""
     try:
-        user = await user_service.create_user(user_in.dict())
+        user = await user_service.create_user(user_in.model_dump())
         return user
     except ValidationException as e:
         raise HTTPException(
@@ -50,7 +50,7 @@ async def update_current_user(
 ) -> Any:
     """현재 인증된 사용자 정보를 업데이트합니다."""
     try:
-        user = await user_service.update_user(current_user.id, user_in.dict(exclude_unset=True))
+        user = await user_service.update_user(current_user.id, user_in.model_dump(exclude_unset=True))
         return user
     except NotFoundException as e:
         raise HTTPException(
