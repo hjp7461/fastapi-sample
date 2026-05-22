@@ -75,15 +75,28 @@ def test_verify_works_across_different_rounds():
     assert verify_password("wrong", default_round_hash) is False
 
 
-def test_needs_rehash_detects_different_rounds():
-    """현재 settings 와 다른 라운드의 해시는 재해시 대상."""
+def test_needs_rehash_detects_lower_rounds():
+    """현재 settings 보다 낮은 라운드의 해시는 재해시 대상 (업그레이드)."""
     plain = "test_password"
-    # 의도적으로 다른 라운드로 해시 (settings 가 12 이면 4 와 다름)
     low_round = bcrypt.hashpw(
         plain.encode("utf-8"), bcrypt.gensalt(rounds=4)
     ).decode("utf-8")
 
     assert needs_rehash(low_round) is True
+
+
+def test_needs_rehash_does_not_downgrade():
+    """현재 settings 보다 높은 라운드의 해시는 재해시 대상이 아니다 (다운그레이드 차단).
+
+    운영자가 BCRYPT_ROUNDS 를 낮춰도 이미 저장된 강한 해시는 그대로 유지되어야 한다.
+    """
+    plain = "test_password"
+    high_round = bcrypt.hashpw(
+        plain.encode("utf-8"),
+        bcrypt.gensalt(rounds=settings.BCRYPT_ROUNDS + 2),
+    ).decode("utf-8")
+
+    assert needs_rehash(high_round) is False
 
 
 def test_needs_rehash_returns_false_for_current_rounds():
