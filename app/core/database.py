@@ -2,6 +2,8 @@
 
 """
 데이터베이스 연결 및 세션 관리를 위한 모듈.
+
+스키마 생성/변경은 alembic 으로 관리한다 (`uv run alembic upgrade head`).
 """
 from typing import AsyncGenerator
 
@@ -12,6 +14,7 @@ from app.di.containers import Container
 
 # Base 모델 정의
 Base = declarative_base()
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
@@ -24,14 +27,3 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     finally:
         # Resource provider가 세션 제거를 관리하므로 여기서는 아무것도 하지 않음
         pass
-
-async def create_db_and_tables() -> None:
-    """
-    데이터베이스와 테이블 생성 (개발/테스트 환경에서만 사용).
-    """
-    from sqlmodel import SQLModel  # SQLModel 임포트
-
-    engine = Container.engine()
-    async with engine.begin() as conn:
-        # SQLModel과 SQLAlchemy 모델을 함께 처리
-        await conn.run_sync(SQLModel.metadata.create_all)

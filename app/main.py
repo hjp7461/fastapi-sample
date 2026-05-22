@@ -8,7 +8,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.core.database import create_db_and_tables
 from app.di.containers import Container
 from app.api.router import api_router
 
@@ -20,12 +19,9 @@ container = Container()
 async def lifespan(app: FastAPI):
     """
     애플리케이션 라이프사이클 이벤트 처리를 위한 lifespan 컨텍스트 매니저.
-    on_event 대신 권장되는 방식입니다.
-    """
-    # 시작 시 실행 (startup)
-    if settings.ENVIRONMENT == "development" and settings.AUTO_CREATE_TABLES:
-        await create_db_and_tables()
 
+    스키마는 alembic 으로 관리한다 (`uv run alembic upgrade head`).
+    """
     yield  # 애플리케이션 실행
 
     # 종료 시 실행 (shutdown)
