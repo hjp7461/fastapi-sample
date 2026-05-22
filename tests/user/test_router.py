@@ -47,6 +47,53 @@ async def test_login(client: AsyncClient, test_user: Dict[str, Any]):
     assert data["token_type"] == "bearer"
 
 
+@pytest.mark.asyncio
+async def test_login_upgrades_old_bcrypt_hash(
+        client: AsyncClient,
+        db_session,
+):
+    """저장된 비밀번호 해시가 낮은 라운드면, 로그인 직후 자동 업그레이드된다.
+
+    PR #7 (bcrypt 라운드 환경별 설정) + 본 PR (lazy rehash) 의 시너지를 검증.
+    운영자가 BCRYPT_ROUNDS 를 상향한 후, 기존 사용자의 해시가 로그인 시
+    자동으로 새 라운드로 업그레이드되는 것이 핵심.
+    """
+    import bcrypt as _bcrypt
+    from app.core.config import settings
+    from app.user.models import UserModel
+
+    plain = "passwd1234"
+    # 의도적으로 낮은 라운드 (4) 로 시드 — settings 가 12 이면 자동 업그레이드 대상
+    old_hash = _bcrypt.hashpw(
+        plain.encode("utf-8"), _bcrypt.gensalt(rounds=4)
+    ).decode("utf-8")
+
+    user = UserModel(
+        email="legacy@example.com",
+        username="legacy",
+        hashed_password=old_hash,
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    # 로그인
+    response = await client.post(
+        "/api/v1/users/token",
+        data={"username": "legacy@example.com", "password": plain},
+    )
+    assert response.status_code == 200
+
+    # DB 의 해시가 settings.BCRYPT_ROUNDS 로 업그레이드되었는지 확인
+    await db_session.refresh(user)
+    new_rounds = int(user.hashed_password.split("$")[2])
+    assert new_rounds == settings.BCRYPT_ROUNDS, (
+        f"expected {settings.BCRYPT_ROUNDS} rounds, got {new_rounds}"
+    )
+    assert user.hashed_password != old_hash
+
+
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_get_current_user(client: AsyncClient, auth_headers: Dict[str, str], test_user: Dict[str, Any]):
     """현재 사용자 정보 조회 테스트."""
