@@ -11,9 +11,6 @@ import jwt
 
 from app.core.config import settings
 
-# bcrypt 라운드. passlib 의 기본값과 동일하게 12 를 사용.
-_BCRYPT_ROUNDS = 12
-
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """입력 비밀번호가 해시와 일치하는지 검증.
@@ -31,12 +28,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def get_password_hash(password: str) -> str:
-    """비밀번호를 bcrypt 로 해시 (UTF-8 인코딩, 12 라운드).
+    """비밀번호를 bcrypt 로 해시 (UTF-8 인코딩, settings.BCRYPT_ROUNDS 라운드).
 
     bcrypt 는 입력의 72 바이트를 초과하는 부분을 무시한다. Pydantic
     스키마에서 `max_length=64` 로 제한하므로 영문 비밀번호 기준 안전 범위.
+
+    라운드는 settings.BCRYPT_ROUNDS 에서 가져온다 (기본 12, 환경 변수로 override).
     """
-    salt = bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)
+    salt = bcrypt.gensalt(rounds=settings.BCRYPT_ROUNDS)
     hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
     return hashed.decode("utf-8")
 
