@@ -27,7 +27,7 @@ async def create_product(
 ) -> Any:
     """새 상품을 생성합니다. (관리자 전용)"""
     try:
-        product = await product_service.create_product(product_in.dict())
+        product = await product_service.create_product(product_in.model_dump())
         return product
     except ValidationException as e:
         raise HTTPException(
@@ -62,7 +62,7 @@ async def update_product(
     try:
         return await product_service.update_product(
             product_id,
-            product_in.dict(exclude_unset=True)
+            product_in.model_dump(exclude_unset=True)
         )
     except NotFoundException as e:
         raise HTTPException(
