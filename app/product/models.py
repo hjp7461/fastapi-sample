@@ -2,7 +2,7 @@
 상품 관련 SQLAlchemy/SQLModel 모델 정의.
 데이터베이스 스키마를 표현합니다.
 """
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 from decimal import Decimal
 
@@ -28,14 +28,17 @@ class ProductModel(SQLModel, table=True):
     inventory: int = Field(default=0, sa_column=Column(Integer, default=0))
     is_active: bool = Field(default=True, sa_column=Column(Boolean, default=True))
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column=Column(DateTime, default=datetime.utcnow)
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=Column(
+            DateTime(timezone=True),
+            default=lambda: datetime.now(UTC),
+        ),
     )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(UTC),
         sa_column=Column(
-            DateTime,
-            default=datetime.utcnow,
-            onupdate=datetime.utcnow
-        )
+            DateTime(timezone=True),
+            default=lambda: datetime.now(UTC),
+            onupdate=lambda: datetime.now(UTC),
+        ),
     )
