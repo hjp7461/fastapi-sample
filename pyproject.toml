@@ -104,7 +104,7 @@ strict_optional = true
 module = ["sqlalchemy.*", "sqlmodel.*", "alembic.*", "dependency_injector.*", "jose.*", "passlib.*", "loguru.*"]
 ignore_missing_imports = true
 
-[cltool.pytest.ini_options]
+[tool.pytest.ini_options]
 addopts = [
     "--import-mode=importlib",
 ]
