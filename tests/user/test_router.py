@@ -93,15 +93,60 @@ async def test_get_user_by_id(client: AsyncClient, auth_headers: Dict[str, str],
 
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
-async def test_get_nonexistent_user(client: AsyncClient, auth_headers: Dict[str, str]):
-    """존재하지 않는 사용자 조회 테스트."""
+async def test_get_nonexistent_user(client: AsyncClient, admin_auth_headers: Dict[str, str]):
+    """존재하지 않는 사용자 조회 테스트. 관리자 컨텍스트에서 404 확인."""
+    # 일반 사용자로 조회하면 본인이 아니므로 403 이 되어 존재 여부를 leak 하지 않음.
+    # 관리자는 권한을 통과하므로 존재 확인 단계까지 진행되어 404 가 반환됨.
     non_existent_id = 9999
 
-    response = await client.get(f"/api/v1/users/{non_existent_id}", headers=auth_headers)
+    response = await client.get(f"/api/v1/users/{non_existent_id}", headers=admin_auth_headers)
 
     assert response.status_code == 404
     data = response.json()
     assert "detail" in data
+
+
+@pytest.mark.asyncio
+async def test_get_user_by_id_without_auth(client: AsyncClient, test_user: Dict[str, Any]):
+    """인증 헤더 없이 호출 시 401."""
+    response = await client.get(f"/api/v1/users/{test_user['id']}")
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_other_user_as_regular_user(
+        client: AsyncClient,
+        auth_headers: Dict[str, str],
+        admin_user: Dict[str, Any],
+):
+    """일반 사용자가 다른 사용자(admin_user) 를 조회하면 403."""
+    response = await client.get(
+        f"/api/v1/users/{admin_user['id']}",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 403
+    data = response.json()
+    assert "detail" in data
+
+
+@pytest.mark.asyncio
+async def test_get_other_user_as_admin(
+        client: AsyncClient,
+        admin_auth_headers: Dict[str, str],
+        test_user: Dict[str, Any],
+):
+    """관리자는 다른 사용자도 조회 가능."""
+    response = await client.get(
+        f"/api/v1/users/{test_user['id']}",
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == test_user["id"]
+    assert data["email"] == test_user["email"]
 
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
