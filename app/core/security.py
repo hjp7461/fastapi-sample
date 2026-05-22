@@ -6,27 +6,39 @@
 from datetime import datetime, timedelta, UTC
 from typing import Any, Dict, Optional, Union
 
+import bcrypt
 import jwt
-from passlib.context import CryptContext
 
 from app.core.config import settings
 
-# 비밀번호 해싱을 위한 컨텍스트
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt 라운드. passlib 의 기본값과 동일하게 12 를 사용.
+_BCRYPT_ROUNDS = 12
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """입력 비밀번호가 해시와 일치하는지 검증.
+
+    해시 포맷이 잘못된 경우 (짧은 문자열, 알 수 없는 알고리즘 등) 에는
+    bcrypt 가 ValueError 를 던지므로 안전하게 False 로 변환한다.
     """
-    일반 텍스트 비밀번호와 해시된 비밀번호를 비교합니다.
-    """
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8"),
+        )
+    except ValueError:
+        return False
 
 
 def get_password_hash(password: str) -> str:
+    """비밀번호를 bcrypt 로 해시 (UTF-8 인코딩, 12 라운드).
+
+    bcrypt 는 입력의 72 바이트를 초과하는 부분을 무시한다. Pydantic
+    스키마에서 `max_length=64` 로 제한하므로 영문 비밀번호 기준 안전 범위.
     """
-    비밀번호를 해시합니다.
-    """
-    return pwd_context.hash(password)
+    salt = bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)
+    hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
+    return hashed.decode("utf-8")
 
 
 def create_access_token(

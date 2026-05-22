@@ -20,7 +20,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     """사용자 생성 요청."""
-    password: str = Field(..., min_length=8, max_length=100)
+    password: str = Field(..., min_length=8, max_length=64)
     password_confirm: str
 
     @field_validator('password_confirm')
@@ -38,7 +38,7 @@ class UserUpdate(BaseModel):
     last_name: Optional[str] = None
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
-    password: Optional[str] = Field(None, min_length=8, max_length=100)
+    password: Optional[str] = Field(None, min_length=8, max_length=64)
 
 
 class UserResponse(UserBase):
