@@ -42,7 +42,7 @@ dependencies = [
 
     # 인증 및 보안
     "python-jose[cryptography]>=3.3.0",
-    "passlib[bcrypt]>=1.7.4",
+    "bcrypt>=4.0",
     "pyjwt>=2.6.0",
 
     # 설정 및 유틸리티
@@ -101,7 +101,7 @@ no_implicit_reexport = true
 strict_optional = true
 
 [[tool.mypy.overrides]]
-module = ["sqlalchemy.*", "sqlmodel.*", "alembic.*", "dependency_injector.*", "jose.*", "passlib.*", "loguru.*"]
+module = ["sqlalchemy.*", "sqlmodel.*", "alembic.*", "dependency_injector.*", "jose.*", "loguru.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
