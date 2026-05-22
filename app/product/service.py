@@ -71,20 +71,13 @@ class ProductService:
         )
 
     async def update_inventory(self, product_id: int, quantity_change: int) -> Product:
-        """상품 재고를 업데이트합니다."""
-        # 먼저 상품이 존재하는지 확인
-        product = await self.product_repository.get_by_id(product_id)
-        if not product:
-            raise NotFoundException(f"Product with ID {product_id} not found")
+        """상품 재고를 업데이트합니다.
 
-        # 재고가 부족한지 확인 (재고 감소 시)
-        if quantity_change < 0 and abs(quantity_change) > product.inventory:
-            raise BusinessLogicException(f"Not enough inventory for product {product_id}")
-
-        # 재고 업데이트
-        updated_product = await self.product_repository.update_inventory(
-            product_id,
-            quantity_change
+        존재 확인과 재고 부족 검증은 repository 의 조건부 UPDATE 가 담당한다.
+        """
+        product = await self.product_repository.update_inventory(
+            product_id, quantity_change
         )
-
-        return updated_product
+        if product is None:
+            raise NotFoundException(f"Product with ID {product_id} not found")
+        return product
