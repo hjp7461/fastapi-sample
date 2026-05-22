@@ -9,7 +9,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from app.core.exceptions import NotFoundException, ValidationException
 from app.di.containers import Container
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_active_admin, get_current_user
 from app.user.schemas import (
     UserCreate, UserUpdate, UserResponse, Token
 )
@@ -98,7 +98,8 @@ async def get_user_by_id(
 async def list_users(
         skip: int = 0,
         limit: int = 100,
+        _: Any = Depends(get_current_active_admin),
         user_service: UserService = Depends(lambda: Container.user_service())
 ) -> Any:
-    """사용자 목록을 조회합니다."""
+    """사용자 목록을 조회합니다. 관리자 전용."""
     return await user_service.list_users(skip=skip, limit=limit)
