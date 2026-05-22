@@ -2,12 +2,13 @@
 사용자 관련 SQLAlchemy/SQLModel 모델 정의.
 데이터베이스 스키마를 표현합니다.
 """
-from datetime import datetime, UTC
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Column, String, Boolean, DateTime, Integer, Enum
 from sqlmodel import Field, SQLModel
 
+from app.core.datetime import utcnow_aware
 from app.user.domain import UserRole
 
 
@@ -26,17 +27,17 @@ class UserModel(SQLModel, table=True):
     role: UserRole = Field(sa_column=Column(Enum(UserRole), default=UserRole.CUSTOMER))
     is_active: bool = Field(default=True, sa_column=Column(Boolean, default=True))
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC),
+        default_factory=utcnow_aware,
         sa_column=Column(
             DateTime(timezone=True),
-            default=lambda: datetime.now(UTC),
+            default=utcnow_aware,
         ),
     )
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC),
+        default_factory=utcnow_aware,
         sa_column=Column(
             DateTime(timezone=True),
-            default=lambda: datetime.now(UTC),
-            onupdate=lambda: datetime.now(UTC),
+            default=utcnow_aware,
+            onupdate=utcnow_aware,
         ),
     )
