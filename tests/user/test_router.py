@@ -132,6 +132,25 @@ async def test_get_other_user_as_regular_user(
 
 
 @pytest.mark.asyncio
+async def test_get_self_or_admin_blocks_before_existence_check(
+        client: AsyncClient,
+        auth_headers: Dict[str, str],
+):
+    """일반 사용자가 존재하지 않는 ID 를 조회해도 403 (404 가 아님).
+
+    권한 검사가 존재 확인보다 먼저 평가됨을 자동 회귀로 보장한다.
+    이는 ID 열거 공격 차단의 핵심 가드 — PR #2 의 보안 매트릭스에서
+    수동 확인으로 남겨두었던 항목.
+    """
+    response = await client.get(
+        "/api/v1/users/9999",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_get_other_user_as_admin(
         client: AsyncClient,
         admin_auth_headers: Dict[str, str],

@@ -9,7 +9,11 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from app.core.exceptions import NotFoundException, ValidationException
 from app.di.containers import Container
-from app.api.dependencies import get_current_active_admin, get_current_user
+from app.api.dependencies import (
+    get_current_active_admin,
+    get_current_user,
+    get_self_or_admin,
+)
 from app.user.schemas import (
     UserCreate, UserUpdate, UserResponse, Token
 )
@@ -82,16 +86,10 @@ async def login_for_access_token(
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user_by_id(
         user_id: int,
-        current_user: Any = Depends(get_current_user),
+        _: Any = Depends(get_self_or_admin),
         user_service: UserService = Depends(lambda: Container.user_service())
 ) -> Any:
     """특정 사용자 정보를 조회합니다. 본인 또는 관리자만 접근 가능."""
-    # 권한 검사를 존재 확인보다 먼저 수행하여 ID 열거 공격 차단
-    if current_user.id != user_id and not current_user.is_admin():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions"
-        )
     try:
         return await user_service.get_user(user_id)
     except NotFoundException as e:
