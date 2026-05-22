@@ -32,7 +32,6 @@ class Settings(BaseSettings):
     # 데이터베이스 설정
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./app.db")
     DB_ECHO: bool = os.getenv("DB_ECHO", "false").lower() == "true"
-    AUTO_CREATE_TABLES: bool = os.getenv("AUTO_CREATE_TABLES", "true").lower() == "true"
 
     # CORS 설정
     CORS_ORIGINS: List[str] = [
