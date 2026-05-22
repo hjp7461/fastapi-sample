@@ -5,10 +5,12 @@
 from typing import List, Optional, Dict, Any, Union
 from datetime import timedelta
 
+from loguru import logger
+
 from app.core.security import (
+    _extract_bcrypt_rounds,
     create_access_token,
     get_password_hash,
-    needs_rehash,
     verify_password,
 )
 from app.core.config import settings
@@ -28,8 +30,10 @@ class UserService:
     async def authenticate_user(self, email: str, password: str) -> Optional[User]:
         """사용자 인증을 처리합니다.
 
-        verify 성공 후 저장된 해시의 라운드가 settings.BCRYPT_ROUNDS 와 다르면
-        백그라운드로 새 라운드로 재해시한다 (lazy upgrade).
+        verify 성공 후 저장된 해시의 라운드를 검사해 다음 정책을 적용한다.
+        - stored < configured (업그레이드): 백그라운드로 재해시. 실패해도 인증은 성공.
+        - stored > configured (다운그레이드): 약화 차단. logger.warning 으로 가시화만.
+        - stored == configured 또는 파싱 실패: 무처리.
         """
         user = await self.user_repository.get_by_email(email)
         if not user:
@@ -37,8 +41,10 @@ class UserService:
         if not verify_password(password, user.hashed_password):
             return None
 
-        # 점진적 재해시: 라운드 불일치 시 백그라운드 업그레이드
-        if needs_rehash(user.hashed_password):
+        stored_rounds = _extract_bcrypt_rounds(user.hashed_password)
+        configured = settings.BCRYPT_ROUNDS
+
+        if stored_rounds is not None and stored_rounds < configured:
             try:
                 new_hash = get_password_hash(password)
                 await self.user_repository.update(
@@ -46,9 +52,16 @@ class UserService:
                 )
                 user.hashed_password = new_hash
             except Exception:
-                # 재해시 실패는 인증 자체를 막지 않음 (백그라운드 작업).
-                # 운영 환경에서는 logger.exception(...) 등으로 모니터링 권장.
-                pass
+                # 재해시 실패는 인증 자체를 막지 않는다.
+                logger.exception(
+                    "rehash failed (user_id={}, stored={}, configured={})",
+                    user.id, stored_rounds, configured,
+                )
+        elif stored_rounds is not None and stored_rounds > configured:
+            logger.warning(
+                "rehash skipped: downgrade detected (user_id={}, stored={}, configured={})",
+                user.id, stored_rounds, configured,
+            )
 
         return user
 

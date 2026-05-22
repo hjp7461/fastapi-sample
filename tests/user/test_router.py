@@ -94,6 +94,124 @@ async def test_login_upgrades_old_bcrypt_hash(
     assert user.hashed_password != old_hash
 
 
+@pytest.mark.asyncio
+async def test_login_logs_warning_on_downgrade(
+        monkeypatch,
+        client: AsyncClient,
+        db_session,
+):
+    """저장된 해시 라운드가 현재 settings 보다 높으면 다운그레이드 차단 + warning 로깅.
+
+    운영자가 BCRYPT_ROUNDS 를 낮춰도 강한 해시는 그대로 유지되어야 하고,
+    스킵 사실은 logger.warning 으로 가시화되어야 한다.
+    """
+    import bcrypt as _bcrypt
+    from app.core.config import settings
+    from app.user.models import UserModel
+
+    warnings: list = []
+    monkeypatch.setattr(
+        "app.user.service.logger.warning",
+        lambda *args, **kwargs: warnings.append((args, kwargs)),
+    )
+
+    plain = "passwd1234"
+    high_rounds = settings.BCRYPT_ROUNDS + 2
+    high_hash = _bcrypt.hashpw(
+        plain.encode("utf-8"), _bcrypt.gensalt(rounds=high_rounds)
+    ).decode("utf-8")
+
+    user = UserModel(
+        email="strong@example.com",
+        username="strong",
+        hashed_password=high_hash,
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    response = await client.post(
+        "/api/v1/users/token",
+        data={"username": "strong@example.com", "password": plain},
+    )
+    assert response.status_code == 200
+
+    # 해시는 그대로 유지되어야 함 (다운그레이드 차단)
+    await db_session.refresh(user)
+    assert user.hashed_password == high_hash
+
+    # logger.warning 이 호출되었고 메시지 템플릿 + args 에 라운드 정보 포함
+    assert warnings, "logger.warning was not called"
+    call_args, _ = warnings[0]
+    msg_template, *positional = call_args
+    assert "downgrade detected" in msg_template
+    assert high_rounds in positional
+    assert settings.BCRYPT_ROUNDS in positional
+
+
+@pytest.mark.asyncio
+async def test_login_logs_exception_on_rehash_failure(
+        monkeypatch,
+        client: AsyncClient,
+        db_session,
+):
+    """재해시 중 repository.update 가 실패해도 인증은 성공하고 logger.exception 으로 기록.
+
+    PR #11 의 except 블록에 로깅을 더해, 운영자가 재해시 실패를 가시적으로
+    모니터링할 수 있도록 한다.
+    """
+    import bcrypt as _bcrypt
+    from app.user.models import UserModel
+
+    exceptions: list = []
+    monkeypatch.setattr(
+        "app.user.service.logger.exception",
+        lambda *args, **kwargs: exceptions.append((args, kwargs)),
+    )
+
+    plain = "passwd1234"
+    # 의도적으로 낮은 라운드 (업그레이드 대상)
+    old_hash = _bcrypt.hashpw(
+        plain.encode("utf-8"), _bcrypt.gensalt(rounds=4)
+    ).decode("utf-8")
+
+    user = UserModel(
+        email="failupgrade@example.com",
+        username="failupgrade",
+        hashed_password=old_hash,
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    # repository.update 가 예외를 던지도록 패치 — 재해시 흐름의 update 만 잡힘.
+    async def _raise(*_a, **_kw):
+        raise RuntimeError("simulated DB failure")
+
+    monkeypatch.setattr(
+        "app.user.repository.UserRepository.update", _raise
+    )
+
+    response = await client.post(
+        "/api/v1/users/token",
+        data={"username": "failupgrade@example.com", "password": plain},
+    )
+    # 재해시 실패해도 인증은 성공
+    assert response.status_code == 200
+
+    # 기존 해시 보존 (실패한 업데이트가 commit 되지 않음)
+    await db_session.refresh(user)
+    assert user.hashed_password == old_hash
+
+    # logger.exception 호출 + 메시지 템플릿에 "rehash failed" 포함
+    assert exceptions, "logger.exception was not called"
+    call_args, _ = exceptions[0]
+    msg_template = call_args[0]
+    assert "rehash failed" in msg_template
+
+
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_get_current_user(client: AsyncClient, auth_headers: Dict[str, str], test_user: Dict[str, Any]):
     """현재 사용자 정보 조회 테스트."""
