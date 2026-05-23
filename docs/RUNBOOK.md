@@ -29,8 +29,21 @@
 | `ALGORITHM` | `HS256` | `HS256` | JWT 알고리즘 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | 정책에 맞게 | 토큰 만료 (분) |
 | `BCRYPT_ROUNDS` | `12` | `12`~`13` (운영), `4` (테스트만) | bcrypt cost. 운영에서는 ≥12, 다운그레이드는 자동 차단 (PR #13) |
+| `USER_ADMIN_EMAIL_MASKING` | `true` | `true` | UserAdminView 응답의 email 마스킹. dev 디버깅 시 `false` 명시 (PR #22) |
+| `LOG_LEVEL` | `INFO` | `INFO` (운영), `DEBUG` (디버깅) | loguru 레벨. 허용값: `DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL` (PR #23) |
+| `LOG_FORMAT` | `text` | `json` | text: 사람 친화 colorized, json: 수집 파이프라인 (PR #23) |
+| `LOG_FILE` | `(빈 값)` | `/var/log/app.log` 등 | 미설정 시 stderr 만. 설정 시 file sink 추가 (PR #23) |
+| `LOG_FILE_ROTATION` | `10 MB` | `100 MB` 등 | LOG_FILE 설정 시 rotation 정책 (loguru 문법, e.g. `1 day`) |
+| `LOG_FILE_RETENTION` | `7 days` | `30 days` 등 | LOG_FILE 설정 시 retention 정책 (loguru 문법) |
 
-**참고**: `AUTO_CREATE_TABLES` 는 PR #14 에서 폐기됨. alembic 으로 대체.
+**참고**: `AUTO_CREATE_TABLES` 는 PR #14 에서 폐기됨. alembic 으로 대체. `.env.example` 도 PR #25 에서 같이 정리.
+
+**수집 파이프라인 연결 (운영)**: `.env` 에 다음 두 줄만 추가하면 JSON 라인 형식으로 stderr/파일 출력 → Datadog/CloudWatch/ELK 등 즉시 연결 가능.
+
+```
+LOG_FORMAT=json
+LOG_FILE=/var/log/app.log
+```
 
 ---
 
