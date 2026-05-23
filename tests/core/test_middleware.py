@@ -69,6 +69,24 @@ def _raise_forbidden() -> None:
     raise AuthorizationException("test forbidden")
 
 
+def _raise_http_401() -> None:
+    """PR #42 회귀 — HTTPException(401) envelope + WWW-Authenticate 보존."""
+    from fastapi import HTTPException
+
+    raise HTTPException(
+        status_code=401,
+        detail="Authentication required",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def _raise_http_403() -> None:
+    """PR #42 회귀 — HTTPException(403) envelope (headers 없는 케이스)."""
+    from fastapi import HTTPException
+
+    raise HTTPException(status_code=403, detail="Forbidden")
+
+
 @pytest.fixture(autouse=True, scope="module")
 def _probe_routes() -> Iterator[None]:
     """테스트용 임시 라우트 2개를 등록 + 모듈 종료 시 제거.
@@ -83,6 +101,8 @@ def _probe_routes() -> Iterator[None]:
     test_router.add_api_route("/__test_raise_404", _raise_not_found, methods=["GET"])
     test_router.add_api_route("/__test_raise_400", _raise_validation, methods=["GET"])
     test_router.add_api_route("/__test_raise_403", _raise_forbidden, methods=["GET"])
+    test_router.add_api_route("/__test_http_401", _raise_http_401, methods=["GET"])
+    test_router.add_api_route("/__test_http_403", _raise_http_403, methods=["GET"])
     app.include_router(test_router)
 
     yield
@@ -95,6 +115,8 @@ def _probe_routes() -> Iterator[None]:
         "/__test_raise_404",
         "/__test_raise_400",
         "/__test_raise_403",
+        "/__test_http_401",
+        "/__test_http_403",
     )
     app.router.routes = [
         r for r in app.router.routes if getattr(r, "path", None) not in _test_paths
@@ -411,11 +433,16 @@ async def test_access_log_emitted_on_route_exception(
 async def test_access_log_status_404_via_handler(
     client: AsyncClient, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    """NotFoundException → handler 변환 → access log status=404."""
+    """NotFoundException → handler 변환 → access log status=404 + envelope."""
     setup_logging()
     response = await client.get("/__test_raise_404")
     assert response.status_code == 404
-    assert response.json() == {"detail": "test resource not found"}
+    assert response.json() == {
+        "detail": {
+            "message": "test resource not found",
+            "code": "not_found",
+        }
+    }
 
     captured = capfd.readouterr()
     assert re.search(
@@ -427,11 +454,16 @@ async def test_access_log_status_404_via_handler(
 async def test_access_log_status_400_via_handler(
     client: AsyncClient, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    """ValidationException → handler 변환 → access log status=400."""
+    """ValidationException → handler 변환 → access log status=400 + envelope."""
     setup_logging()
     response = await client.get("/__test_raise_400")
     assert response.status_code == 400
-    assert response.json() == {"detail": "test field invalid"}
+    assert response.json() == {
+        "detail": {
+            "message": "test field invalid",
+            "code": "validation_error",
+        }
+    }
 
     captured = capfd.readouterr()
     assert re.search(
@@ -443,13 +475,74 @@ async def test_access_log_status_400_via_handler(
 async def test_access_log_status_403_via_handler(
     client: AsyncClient, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    """AuthorizationException → handler 변환 → access log status=403."""
+    """AuthorizationException → handler 변환 → access log status=403 + envelope."""
     setup_logging()
     response = await client.get("/__test_raise_403")
     assert response.status_code == 403
-    assert response.json() == {"detail": "test forbidden"}
+    assert response.json() == {
+        "detail": {
+            "message": "test forbidden",
+            "code": "authorization_error",
+        }
+    }
 
     captured = capfd.readouterr()
     assert re.search(
         r'"GET /__test_raise_403 HTTP/\S+" 403 \d+\.\d+ms', captured.err
     ), f"access log status=403 누락. 실제 stderr:\n{captured.err}"
+
+
+# ---------------------------------------------------------------------------
+# 응답 envelope 표준화 (PR #42) — HTTPException 일관 적용 + 422 default 유지
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_http_exception_401_envelope_with_headers(
+    client: AsyncClient,
+) -> None:
+    """HTTPException(401) → envelope + WWW-Authenticate 헤더 보존 (OAuth2)."""
+    response = await client.get("/__test_http_401")
+    assert response.status_code == 401
+    assert response.json() == {
+        "detail": {
+            "message": "Authentication required",
+            "code": "http_401",
+        }
+    }
+    # OAuth2 호환 헤더 보존 회귀 가드
+    assert response.headers.get("WWW-Authenticate") == "Bearer"
+
+
+@pytest.mark.asyncio
+async def test_http_exception_403_envelope(client: AsyncClient) -> None:
+    """HTTPException(403) → envelope (headers 없는 케이스)."""
+    response = await client.get("/__test_http_403")
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": {
+            "message": "Forbidden",
+            "code": "http_403",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_request_validation_error_keeps_fastapi_default(
+    client: AsyncClient,
+) -> None:
+    """422 RequestValidationError 는 FastAPI default 형식 유지 (envelope 비적용).
+
+    회귀 가드: PR #42 의 envelope 표준화가 422 까지 잘못 영향 미치지
+    않도록 보장. 422 는 field별 정보 list 라 별도 envelope 후속.
+    """
+    # /api/v1/users/ POST 에 invalid body 전송 (email 누락 등)
+    response = await client.post("/api/v1/users/", json={"username": "x"})
+    assert response.status_code == 422
+    body = response.json()
+    # FastAPI default: detail 이 list of field errors
+    assert isinstance(body["detail"], list)
+    assert len(body["detail"]) > 0
+    # 각 항목은 loc/msg/type 키 보유
+    assert "loc" in body["detail"][0]
+    assert "msg" in body["detail"][0]
