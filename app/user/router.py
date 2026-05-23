@@ -2,7 +2,7 @@
 사용자 관련 API 엔드포인트.
 HTTP 요청을 처리하고 적절한 서비스를 호출합니다.
 """
-from typing import List, Any
+from typing import List, Any, Union
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -14,8 +14,16 @@ from app.api.dependencies import (
     get_current_user,
     get_self_or_admin,
 )
+from app.user.domain import User
 from app.user.schemas import (
-    UserCreate, UserUpdate, UserResponse, Token
+    Token,
+    UserAdminView,
+    UserCreate,
+    UserResponse,
+    UserSummary,
+    UserUpdate,
+    build_admin_view,
+    build_summary,
 )
 from app.user.service import UserService
 
@@ -83,28 +91,40 @@ async def login_for_access_token(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@router.get("/{user_id}", response_model=UserResponse)
+@router.get("/{user_id}", response_model=Union[UserResponse, UserAdminView])
 async def get_user_by_id(
         user_id: int,
-        _: Any = Depends(get_self_or_admin),
+        current_user: User = Depends(get_self_or_admin),
         user_service: UserService = Depends(lambda: Container.user_service())
 ) -> Any:
-    """특정 사용자 정보를 조회합니다. 본인 또는 관리자만 접근 가능."""
+    """특정 사용자 정보를 조회합니다. 본인 또는 관리자만 접근 가능.
+
+    - 본인 조회: `UserResponse` (전체 PII)
+    - 관리자가 타인 조회: `UserAdminView` (email 마스킹 + 이름 제외)
+    """
     try:
-        return await user_service.get_user(user_id)
+        user = await user_service.get_user(user_id)
     except NotFoundException as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
 
+    if current_user.id == user.id:
+        return user
+    return build_admin_view(user)
 
-@router.get("/", response_model=List[UserResponse])
+
+@router.get("/", response_model=List[UserSummary])
 async def list_users(
         skip: int = 0,
         limit: int = 100,
         _: Any = Depends(get_current_active_admin),
         user_service: UserService = Depends(lambda: Container.user_service())
 ) -> Any:
-    """사용자 목록을 조회합니다. 관리자 전용."""
-    return await user_service.list_users(skip=skip, limit=limit)
+    """사용자 목록을 조회합니다. 관리자 전용.
+
+    응답은 `UserSummary` (PII 0건) — 목록 페이지에서 이메일/이름 무차별 노출 차단.
+    """
+    users = await user_service.list_users(skip=skip, limit=limit)
+    return [build_summary(u) for u in users]

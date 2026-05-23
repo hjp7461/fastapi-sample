@@ -6,6 +6,7 @@ from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.user.domain import UserRole
+from app.user.masking import mask_email
 
 
 class UserBase(BaseModel):
@@ -42,12 +43,70 @@ class UserUpdate(BaseModel):
 
 
 class UserResponse(UserBase):
-    """사용자 정보 응답."""
+    """본인 조회 응답 — 전체 PII 노출 (email, 이름 포함).
+
+    `GET /users/me` 및 `GET /users/{id}` 에서 viewer 가 본인일 때 사용.
+    """
     id: int
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class UserAdminView(BaseModel):
+    """관리자가 타인을 상세 조회할 때의 응답 — PII 최소화.
+
+    - email 은 마스킹된 형태 (`a***@e***.com`)
+    - first_name / last_name 은 응답에서 제외
+    """
+    id: int
+    username: str
+    email: str
+    role: UserRole
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class UserSummary(BaseModel):
+    """관리자 목록 조회 — PII 0건.
+
+    `GET /users/` 에서 사용. id/username/role/is_active/created_at 만 노출.
+    """
+    id: int
+    username: str
+    role: UserRole
+    is_active: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+def build_admin_view(user) -> UserAdminView:
+    """도메인 User 를 관리자용 마스킹 응답으로 변환."""
+    return UserAdminView(
+        id=user.id,
+        username=user.username,
+        email=mask_email(user.email),
+        role=user.role,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+    )
+
+
+def build_summary(user) -> UserSummary:
+    """도메인 User 를 요약 응답으로 변환 (PII 0건)."""
+    return UserSummary(
+        id=user.id,
+        username=user.username,
+        role=user.role,
+        is_active=user.is_active,
+        created_at=user.created_at,
+    )
 
 
 class Token(BaseModel):
