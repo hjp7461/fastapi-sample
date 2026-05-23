@@ -7,7 +7,7 @@ from typing import List, Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 
 from app.core.exceptions import NotFoundException, ValidationException, BusinessLogicException
-from app.di.containers import Container
+from app.di.providers import get_product_service
 from app.api.dependencies import get_current_user, get_current_active_admin
 from app.product.schemas import (
     ProductCreate, ProductUpdate, ProductResponse, ProductInventoryUpdate
@@ -22,7 +22,7 @@ router = APIRouter()
 @router.post("/", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
 async def create_product(
     product_in: ProductCreate,
-    product_service: ProductService = Depends(lambda: Container.product_service()),
+    product_service: ProductService = Depends(get_product_service),
     current_user: Any = Depends(get_current_active_admin)
 ) -> Any:
     """새 상품을 생성합니다. (관리자 전용)"""
@@ -39,7 +39,7 @@ async def create_product(
 @router.get("/{product_id}", response_model=ProductResponse)
 async def get_product_by_id(
     product_id: int,
-    product_service: ProductService = Depends(lambda: Container.product_service())
+    product_service: ProductService = Depends(get_product_service)
 ) -> Any:
     """특정 상품 정보를 조회합니다."""
     try:
@@ -55,7 +55,7 @@ async def get_product_by_id(
 async def update_product(
     product_id: int,
     product_in: ProductUpdate,
-    product_service: ProductService = Depends(lambda: Container.product_service()),
+    product_service: ProductService = Depends(get_product_service),
     current_user: Any = Depends(get_current_active_admin)
 ) -> Any:
     """상품 정보를 업데이트합니다. (관리자 전용)"""
@@ -74,7 +74,7 @@ async def update_product(
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_product(
     product_id: int,
-    product_service: ProductService = Depends(lambda: Container.product_service()),
+    product_service: ProductService = Depends(get_product_service),
     current_user: Any = Depends(get_current_active_admin)
 ) -> None:
     """상품을 삭제합니다. (관리자 전용)"""
@@ -93,7 +93,7 @@ async def list_products(
     limit: int = 100,
     category: Optional[ProductCategory] = None,
     is_active: Optional[bool] = Query(None, description="활성화 상태 필터링"),
-    product_service: ProductService = Depends(lambda: Container.product_service())
+    product_service: ProductService = Depends(get_product_service)
 ) -> Any:
     """상품 목록을 조회합니다."""
     return await product_service.list_products(
@@ -108,7 +108,7 @@ async def list_products(
 async def update_product_inventory(
     product_id: int,
     inventory_update: ProductInventoryUpdate,
-    product_service: ProductService = Depends(lambda: Container.product_service()),
+    product_service: ProductService = Depends(get_product_service),
     current_user: Any = Depends(get_current_active_admin)
 ) -> Any:
     """상품 재고를 업데이트합니다. (관리자 전용)"""

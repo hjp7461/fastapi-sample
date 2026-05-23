@@ -9,9 +9,9 @@ import jwt
 from jwt.exceptions import PyJWTError
 
 from app.core.config import settings
+from app.di.providers import get_user_service
 from app.user.domain import User
 from app.user.service import UserService
-from app.di.containers import Container
 
 # OAuth2 인증 설정
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/users/token")
@@ -19,7 +19,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/users/toke
 
 async def get_current_user(
         token: str = Depends(oauth2_scheme),
-        user_service: UserService = Depends(lambda: Container.user_service())
+        user_service: UserService = Depends(get_user_service),
 ) -> User:
     """
     현재 인증된 사용자를 검색합니다.
