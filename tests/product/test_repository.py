@@ -8,7 +8,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.product.domain import Product, ProductCategory
+from app.product.domain import NewProduct, ProductCategory
 from app.product.repository import (
     InventoryUpdateOutcome,
     InventoryUpdateResult,
@@ -21,7 +21,7 @@ async def test_update_inventory_returns_ok_on_success(db_session):
     """정상 갱신: outcome.OK + product 반영."""
     repo = ProductRepository(db_session)
     product = await repo.create(
-        Product(
+        NewProduct(
             name="P1",
             description=None,
             price=Decimal("10.00"),
@@ -55,7 +55,7 @@ async def test_update_inventory_returns_insufficient_when_negative(db_session):
     """음수 발생: outcome.INSUFFICIENT + 재고 보존."""
     repo = ProductRepository(db_session)
     product = await repo.create(
-        Product(
+        NewProduct(
             name="P2",
             description=None,
             price=Decimal("5.00"),

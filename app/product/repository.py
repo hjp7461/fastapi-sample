@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.product.domain import Product, ProductCategory
+from app.product.domain import NewProduct, Product, ProductCategory
 from app.product.models import ProductModel
 
 
@@ -46,15 +46,15 @@ class ProductRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def create(self, product: Product) -> Product:
-        """새 상품을 생성합니다."""
+    async def create(self, new_product: NewProduct) -> Product:
+        """새 상품을 생성합니다. DB save 후 `Product` 로 변환하여 반환."""
         db_product = ProductModel(
-            name=product.name,
-            description=product.description,
-            price=product.price,
-            category=product.category,
-            inventory=product.inventory,
-            is_active=product.is_active,
+            name=new_product.name,
+            description=new_product.description,
+            price=new_product.price,
+            category=new_product.category,
+            inventory=new_product.inventory,
+            is_active=new_product.is_active,
         )
         self.session.add(db_product)
         await self.session.commit()

@@ -9,7 +9,7 @@ from app.core.exceptions import (
     BusinessLogicException,
     NotFoundException,
 )
-from app.product.domain import Product, ProductCategory
+from app.product.domain import NewProduct, Product, ProductCategory
 from app.product.repository import (
     InventoryUpdateOutcome,
     ProductRepository,
@@ -26,7 +26,7 @@ class ProductService:
 
     async def create_product(self, product_data: Dict[str, Any]) -> Product:
         """새 상품을 생성합니다."""
-        product = Product(
+        new_product = NewProduct(
             name=product_data["name"],
             description=product_data.get("description"),
             price=product_data["price"],
@@ -35,7 +35,7 @@ class ProductService:
             is_active=product_data.get("is_active", True),
         )
 
-        return await self.product_repository.create(product)
+        return await self.product_repository.create(new_product)
 
     async def get_product(self, product_id: int) -> Product:
         """ID로 상품을 조회합니다."""
