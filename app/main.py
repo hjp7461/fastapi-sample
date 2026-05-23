@@ -11,7 +11,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import settings
+from app.core.logging import setup_logging
 from app.di.containers import Container
+
+# 로깅 단일 진입점 — sink/포맷/레벨 환경 변수 기반 구성
+setup_logging()
 
 # 의존성 주입 컨테이너 초기화
 container = Container()
