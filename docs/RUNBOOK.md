@@ -257,6 +257,7 @@ CUSTOMER ⊂ STAFF ⊂ ADMIN
 3. **라우터** (`app/{user,product}/router.py`) — `Depends(가드)` 교체.
 4. **회귀 테스트** — 역할 × 엔드포인트 매트릭스를 통합 테스트로 가드 (`tests/{user,product}/test_router.py` 의 `as_admin` / `as_staff` / `as_regular_user` 패턴).
 5. **본 RUNBOOK §9** — §9.1~§9.4 표 동기화. 정책 결정 의도가 새로 추가되면 §9.4 에 한 문장 명시.
+6. **다이어그램** (`docs/diagram/`) — 가드 명명 / 응답 분기 / Endpoint × 역할 매트릭스가 코드 ↔ RUNBOOK §9 와 1:1 일치하도록 갱신. 영향 받는 파일을 PR description 의 산출물 체크리스트에 포함 (PR #28 흐름).
 
 ---
 
