@@ -21,6 +21,11 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.context import get_request_id
+from app.core.exceptions import (
+    AuthorizationException,
+    NotFoundException,
+    ValidationException,
+)
 from app.core.logging import setup_logging
 from app.core.middleware import MAX_LENGTH, _validate_incoming_id
 from app.main import app
@@ -49,6 +54,21 @@ def _raise_handler() -> None:
     raise RuntimeError("intentional-test-failure")
 
 
+def _raise_not_found() -> None:
+    """PR #41 회귀 — 도메인 예외 → handler 변환 후 access log status=404."""
+    raise NotFoundException("test resource not found")
+
+
+def _raise_validation() -> None:
+    """PR #41 회귀 — 도메인 예외 → handler 변환 후 access log status=400."""
+    raise ValidationException("test field invalid")
+
+
+def _raise_forbidden() -> None:
+    """PR #41 회귀 — 도메인 예외 → handler 변환 후 access log status=403."""
+    raise AuthorizationException("test forbidden")
+
+
 @pytest.fixture(autouse=True, scope="module")
 def _probe_routes() -> Iterator[None]:
     """테스트용 임시 라우트 2개를 등록 + 모듈 종료 시 제거.
@@ -60,12 +80,22 @@ def _probe_routes() -> Iterator[None]:
     test_router.add_api_route("/__test_request_id", _read_request_id, methods=["GET"])
     test_router.add_api_route("/__test_log_probe", _log_probe, methods=["GET"])
     test_router.add_api_route("/__test_raise", _raise_handler, methods=["GET"])
+    test_router.add_api_route("/__test_raise_404", _raise_not_found, methods=["GET"])
+    test_router.add_api_route("/__test_raise_400", _raise_validation, methods=["GET"])
+    test_router.add_api_route("/__test_raise_403", _raise_forbidden, methods=["GET"])
     app.include_router(test_router)
 
     yield
 
     # teardown: 본 router 의 routes 만 제거 (다른 라우트 영향 없도록)
-    _test_paths = ("/__test_request_id", "/__test_log_probe", "/__test_raise")
+    _test_paths = (
+        "/__test_request_id",
+        "/__test_log_probe",
+        "/__test_raise",
+        "/__test_raise_404",
+        "/__test_raise_400",
+        "/__test_raise_403",
+    )
     app.router.routes = [
         r for r in app.router.routes if getattr(r, "path", None) not in _test_paths
     ]
@@ -370,3 +400,56 @@ async def test_access_log_emitted_on_route_exception(
     assert matches, (
         f"예외 발생 시 access log (status=500) 누락. 실제 stderr:\n{captured.err}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Exception handler 통합 (PR #41) — access log status 정확성 회귀 가드
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_access_log_status_404_via_handler(
+    client: AsyncClient, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """NotFoundException → handler 변환 → access log status=404."""
+    setup_logging()
+    response = await client.get("/__test_raise_404")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "test resource not found"}
+
+    captured = capfd.readouterr()
+    assert re.search(
+        r'"GET /__test_raise_404 HTTP/\S+" 404 \d+\.\d+ms', captured.err
+    ), f"access log status=404 누락. 실제 stderr:\n{captured.err}"
+
+
+@pytest.mark.asyncio
+async def test_access_log_status_400_via_handler(
+    client: AsyncClient, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """ValidationException → handler 변환 → access log status=400."""
+    setup_logging()
+    response = await client.get("/__test_raise_400")
+    assert response.status_code == 400
+    assert response.json() == {"detail": "test field invalid"}
+
+    captured = capfd.readouterr()
+    assert re.search(
+        r'"GET /__test_raise_400 HTTP/\S+" 400 \d+\.\d+ms', captured.err
+    ), f"access log status=400 누락. 실제 stderr:\n{captured.err}"
+
+
+@pytest.mark.asyncio
+async def test_access_log_status_403_via_handler(
+    client: AsyncClient, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """AuthorizationException → handler 변환 → access log status=403."""
+    setup_logging()
+    response = await client.get("/__test_raise_403")
+    assert response.status_code == 403
+    assert response.json() == {"detail": "test forbidden"}
+
+    captured = capfd.readouterr()
+    assert re.search(
+        r'"GET /__test_raise_403 HTTP/\S+" 403 \d+\.\d+ms', captured.err
+    ), f"access log status=403 누락. 실제 stderr:\n{captured.err}"
