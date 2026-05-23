@@ -24,36 +24,44 @@
 ```
 /app
 ├── core/                      # 핵심 모듈 (공통 기능)
-│   ├── config.py              # 환경 설정
-│   ├── database.py            # 데이터베이스 연결 및 설정
-│   ├── security.py            # 인증, 암호화 관련 유틸리티
-│   ├── exceptions.py          # 커스텀 예외 정의
-│   └── logging.py             # 로깅 설정
+│   ├── config.py              # Settings (환경 변수 진실원, RUNBOOK §2 참고)
+│   ├── database.py            # async engine / get_db
+│   ├── datetime.py            # utcnow_aware() 헬퍼 (timezone-aware UTC)
+│   ├── logging.py             # setup_logging() — loguru sink + stdlib InterceptHandler
+│   ├── security.py            # bcrypt 직접 사용 + JWT + needs_rehash
+│   └── exceptions.py          # 도메인 / 비즈니스 예외
 │
 ├── user/                      # 사용자 관리 모듈
-│   ├── domain.py              # 사용자 도메인 엔티티
-│   ├── models.py              # 데이터베이스 모델
-│   ├── schemas.py             # Pydantic 모델 (API 스키마)
+│   ├── domain.py              # User / UserRole (is_admin, is_staff_or_above, can_manage_products)
+│   ├── models.py              # SQLAlchemy 모델
+│   ├── masking.py             # mask_email — PII 마스킹 헬퍼
+│   ├── schemas.py             # UserResponse(본인) / UserAdminView(타인) / UserSummary(목록)
 │   ├── repository.py          # 데이터 액세스 로직
-│   ├── service.py             # 비즈니스 로직
-│   └── router.py              # API 엔드포인트
+│   ├── service.py             # authenticate_user (lazy rehash) 등
+│   └── router.py              # /users 엔드포인트
 │
 ├── product/                   # 상품 관리 모듈
-│   ├── domain.py              # 상품 도메인 엔티티
-│   ├── models.py              # 데이터베이스 모델
-│   ├── schemas.py             # Pydantic 모델 (API 스키마)
-│   ├── repository.py          # 데이터 액세스 로직
+│   ├── domain.py              # Product 도메인
+│   ├── models.py              # SQLAlchemy 모델
+│   ├── schemas.py             # ProductResponse(Full) / ProductPublicView(inventory 제외)
+│   ├── repository.py          # update_inventory → InventoryUpdateOutcome (enum 결과 패턴)
 │   ├── service.py             # 비즈니스 로직
-│   └── router.py              # API 엔드포인트
+│   └── router.py              # /products 엔드포인트 (viewer 분기)
 │
-├── api/                       # API 라우터 통합
-│   ├── dependencies.py        # 공통 의존성
+├── api/                       # 인증 / 권한 / 라우터 통합
+│   ├── dependencies.py        # 인증: get_current_user / get_optional_current_user
+│   ├── permissions.py         # 권한 가드: require_admin / require_self_or_admin / require_staff_or_admin
 │   └── router.py              # 메인 API 라우터
 │
 ├── di/                        # 의존성 주입 설정
-│   └── containers.py          # 의존성 주입 컨테이너
+│   ├── containers.py          # dependency_injector Container
+│   └── providers.py           # named helper (Depends(get_xxx_service))
 │
-└── main.py                    # 애플리케이션 진입점
+└── main.py                    # FastAPI app + lifespan + setup_logging()
+
+alembic/                       # 스키마 마이그레이션 단일 진실원
+├── env.py                     # async + settings.DATABASE_URL fallback
+└── versions/                  # 리비전 파일들
 ```
 
 ## 클린 아키텍처 적용
@@ -88,11 +96,8 @@ AsyncScopedSession = async_scoped_session(
 [uv](https://github.com/astral-sh/uv)를 사용하여 의존성을 설치합니다:
 
 ```bash
-# 기본 의존성 설치
-uv pip install -e .
-
-# 개발 및 테스트 의존성 포함 설치
-uv pip install -e ".[dev,test]"
+# 모든 extras (dev, test) 포함 설치 — lockfile (uv.lock) 기반
+uv sync --all-extras
 ```
 
 ### Pre-commit hook (선택, 권장)
@@ -127,18 +132,20 @@ LOG_LEVEL=DEBUG
 ### 데이터베이스 마이그레이션
 
 ```bash
-# 마이그레이션 생성
-alembic revision --autogenerate -m "Initial migration"
+# 마이그레이션 생성 (모델 변경 후)
+uv run alembic revision --autogenerate -m "메시지"
 
 # 마이그레이션 적용
-alembic upgrade head
+uv run alembic upgrade head
 ```
+
+> 운영 명령 매트릭스 (롤백 / Postgres 이전 / 트러블슈팅) 는 [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §4~§8 참조.
 
 ### 애플리케이션 실행
 
 ```bash
 # 개발 서버 실행
-uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload
 ```
 
 ## API 문서
@@ -148,30 +155,48 @@ uvicorn app.main:app --reload
 - Swagger UI: http://localhost:8000/api/v1/docs
 - ReDoc: http://localhost:8000/api/v1/redoc
 
+## 권한 정책
+
+권한 매트릭스의 운영자 진실원은 [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §9. 본 README 는 인덱스만 제공합니다.
+
+- 역할 계층: `CUSTOMER ⊂ STAFF ⊂ ADMIN` (`app/user/domain.py`)
+- 권한 가드 (`app/api/permissions.py`):
+  - `require_admin` — ADMIN 전용 (사용자 관리)
+  - `require_self_or_admin` — 본인 또는 ADMIN (사용자 단건 조회)
+  - `require_staff_or_admin` — STAFF + ADMIN (상품 변경)
+- 정책 결정 배경: PR #19 (viewer 분기) / PR #26 (B-2: 상품은 STAFF, 사용자 관리는 ADMIN) / PR #27 (RUNBOOK §9 정착)
+- 다이어그램: [`docs/diagram/인증_및_권한.md`](docs/diagram/인증_및_권한.md) §2
+
+정책 변경 시는 RUNBOOK §9.5 의 갱신 순서를 따릅니다 (도메인 → 가드 → 라우터 → 테스트 → RUNBOOK → 다이어그램).
+
 ## 테스트
 
 ```bash
 # 테스트 실행
-pytest
+uv run pytest
 
 # 코드 커버리지 보고서와 함께 테스트 실행
-pytest --cov=app
+uv run pytest --cov=app
 ```
 
 ## 로깅
 
-애플리케이션은 Loguru를 사용하여 구조화된 로깅을 제공합니다:
+`app/core/logging.py::setup_logging()` 이 진입점 (`app/main.py` import 시점) 에서 한 번 호출되어
+loguru sink + stdlib `logging` InterceptHandler 를 모두 설정합니다. 애플리케이션 코드는 loguru 를
+직접 import 합니다:
 
 ```python
-from app.core.logging import get_logger
+from loguru import logger
 
-logger = get_logger("module_name")
-logger.info("정보 메시지")
-logger.error("오류 발생", extra={"context": "추가 정보"})
+logger.info("정보 메시지", user_id=42)
+logger.bind(request_id="abc").warning("경고")
 ```
 
-- 개발 환경: 컬러링된 사람이 읽기 쉬운 로그
-- 프로덕션 환경: JSON 형식의 구조화된 로그
+운영 토글은 환경 변수로 제어합니다 (자세한 매트릭스는 [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §2 참조):
+
+- `LOG_LEVEL` — `DEBUG` / `INFO` / `WARNING` / `ERROR`
+- `LOG_FORMAT` — `text` (개발, 컬러 사람-친화) / `json` (운영, 수집 파이프라인 연결)
+- `LOG_FILE` / `LOG_FILE_ROTATION` / `LOG_FILE_RETENTION` — 파일 sink 옵션
 
 ## 라이센스
 
