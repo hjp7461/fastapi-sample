@@ -5,7 +5,7 @@ API 요청 및 응답의 데이터 구조를 표현합니다.
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional, cast
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -75,18 +75,18 @@ class ProductPublicView(BaseModel):
 def build_public_view(product: Product) -> ProductPublicView:
     """도메인 Product 를 공개용으로 변환 (inventory 제외).
 
-    DB 에서 가져온 product 는 id/created_at/updated_at not None — cast 로 narrow.
-    price 는 도메인이 float|Decimal 합쳐 두지만 응답 스키마는 Decimal.
+    price 는 도메인이 float|Decimal 양쪽 허용이지만 응답 스키마는 Decimal 강제.
+    Decimal 통일은 별도 후속.
     """
     return ProductPublicView(
-        id=cast(int, product.id),
+        id=product.id,
         name=product.name,
         description=product.description,
         price=Decimal(str(product.price)),
         category=product.category,
         is_active=product.is_active,
-        created_at=cast(datetime, product.created_at),
-        updated_at=cast(datetime, product.updated_at),
+        created_at=product.created_at,
+        updated_at=product.updated_at,
     )
 
 

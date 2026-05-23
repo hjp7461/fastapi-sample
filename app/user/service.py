@@ -16,7 +16,7 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
-from app.user.domain import User, UserRole
+from app.user.domain import NewUser, User, UserRole
 from app.user.repository import UserRepository
 
 
@@ -37,9 +37,9 @@ class UserService:
         - stored == configured 또는 파싱 실패: 무처리.
         """
         user = await self.user_repository.get_by_email(email)
-        # 인증 흐름은 DB 에서 가져온 user 의 id / hashed_password 가 항상 있다고
-        # 가정. 도메인 모델이 Optional 로 선언되어 있어 mypy narrow 명시.
-        if not user or not user.hashed_password or user.id is None:
+        # user.id 는 도메인이 not None 보장 (PR #38). hashed_password 는 OAuth /
+        # 외부 로그인 시나리오에서 None 가능 → narrow 유지.
+        if not user or not user.hashed_password:
             return None
         if not verify_password(password, user.hashed_password):
             return None
@@ -83,8 +83,8 @@ class UserService:
         # 비밀번호 해싱
         hashed_password = get_password_hash(user_data.pop("password"))
 
-        # 사용자 객체 생성
-        user = User(
+        # 신규 사용자 객체 생성 (DB save 이전 상태)
+        new_user = NewUser(
             email=user_data["email"],
             username=user_data["username"],
             hashed_password=hashed_password,
@@ -94,8 +94,8 @@ class UserService:
             is_active=user_data.get("is_active", True),
         )
 
-        # 저장 및 반환
-        return await self.user_repository.create(user)
+        # 저장 및 반환 (User 로 변환됨)
+        return await self.user_repository.create(new_user)
 
     async def get_user(self, user_id: int) -> User:
         """ID로 사용자를 조회합니다."""

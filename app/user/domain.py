@@ -16,19 +16,44 @@ class UserRole(str, Enum):
 
 
 @dataclass
-class User:
-    """사용자 도메인 엔티티."""
+class NewUser:
+    """신규 사용자 생성용 도메인 객체 — DB save 이전 상태.
 
-    id: Optional[int] = None
-    email: str = ""
-    username: str = ""
-    hashed_password: Optional[str] = None
+    id/created_at/updated_at 가 없음. service 가 입력 데이터를 정리하여 만들고
+    repository.create() 에 전달. 저장 후 `User` 로 반환된다.
+    """
+
+    email: str
+    username: str
+    hashed_password: str
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     role: UserRole = UserRole.CUSTOMER
     is_active: bool = True
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+
+
+@dataclass
+class User:
+    """사용자 도메인 엔티티 — DB save 이후 상태.
+
+    id/created_at/updated_at 가 항상 not None (저장된 사용자 표현). 신규
+    생성은 `NewUser` 사용 후 `repository.create()` 호출 — 본 dataclass 의
+    default 값으로 객체를 만들지 말 것.
+
+    `hashed_password` 는 OAuth/외부 로그인 시나리오에서 None 가능 → Optional 유지.
+    `first_name`/`last_name` 은 실제 미입력 가능 → Optional 유지.
+    """
+
+    id: int
+    email: str
+    username: str
+    role: UserRole
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    hashed_password: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
 
     @property
     def full_name(self) -> str:

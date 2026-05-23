@@ -8,7 +8,7 @@ from typing import List, Optional
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.user.domain import User
+from app.user.domain import NewUser, User
 from app.user.models import UserModel
 
 
@@ -20,16 +20,16 @@ class UserRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def create(self, user: User) -> User:
-        """새 사용자를 생성합니다."""
+    async def create(self, new_user: NewUser) -> User:
+        """새 사용자를 생성합니다. DB save 후 `User` 로 변환하여 반환."""
         db_user = UserModel(
-            email=user.email,
-            username=user.username,
-            hashed_password=user.hashed_password,
-            first_name=user.first_name,
-            last_name=user.last_name,
-            role=user.role,
-            is_active=user.is_active,
+            email=new_user.email,
+            username=new_user.username,
+            hashed_password=new_user.hashed_password,
+            first_name=new_user.first_name,
+            last_name=new_user.last_name,
+            role=new_user.role,
+            is_active=new_user.is_active,
         )
         self.session.add(db_user)
         await self.session.commit()

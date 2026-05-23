@@ -3,7 +3,7 @@
 """
 
 from datetime import datetime
-from typing import Optional, cast
+from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field, ValidationInfo, field_validator
 
@@ -101,33 +101,27 @@ def build_admin_view(user: User) -> UserAdminView:
 
     email 마스킹은 `settings.USER_ADMIN_EMAIL_MASKING` 에 따라 결정.
     기본 True (마스킹 ON, 운영 안전). False 명시 시 raw email.
-
-    DB 에서 가져온 user 의 id/created_at/updated_at 은 항상 not None 이지만
-    도메인 모델이 Optional 로 선언 — builder 호출 시점에서 cast.
     """
     email = mask_email(user.email) if settings.USER_ADMIN_EMAIL_MASKING else user.email
     return UserAdminView(
-        id=cast(int, user.id),
+        id=user.id,
         username=user.username,
         email=email,
         role=user.role,
         is_active=user.is_active,
-        created_at=cast(datetime, user.created_at),
-        updated_at=cast(datetime, user.updated_at),
+        created_at=user.created_at,
+        updated_at=user.updated_at,
     )
 
 
 def build_summary(user: User) -> UserSummary:
-    """도메인 User 를 요약 응답으로 변환 (PII 0건).
-
-    DB 에서 가져온 user 는 id/created_at not None — cast 로 builder 시점 narrow.
-    """
+    """도메인 User 를 요약 응답으로 변환 (PII 0건)."""
     return UserSummary(
-        id=cast(int, user.id),
+        id=user.id,
         username=user.username,
         role=user.role,
         is_active=user.is_active,
-        created_at=cast(datetime, user.created_at),
+        created_at=user.created_at,
     )
 
 
