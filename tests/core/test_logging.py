@@ -7,6 +7,7 @@
 
 import json
 import logging
+from collections.abc import Iterator
 
 import pytest
 from loguru import logger
@@ -16,14 +17,14 @@ from app.core.logging import setup_logging
 
 
 @pytest.fixture(autouse=True)
-def restore_logger():
+def restore_logger() -> Iterator[None]:
     """각 테스트 후 logger sink 상태를 default 로 복원."""
     yield
     logger.remove()
     setup_logging()
 
 
-def test_setup_logging_text_default(capfd):
+def test_setup_logging_text_default(capfd: pytest.CaptureFixture[str]) -> None:
     """default LOG_FORMAT=text → stderr 사람 친화 포맷 + request_id 컬럼."""
     setup_logging()
     logger.warning("probe-text")
@@ -34,7 +35,9 @@ def test_setup_logging_text_default(capfd):
     assert " - " in captured.err  # "-" placeholder 가 컬럼 사이에 보임
 
 
-def test_setup_logging_json_format(monkeypatch, capfd):
+def test_setup_logging_json_format(
+    monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
     """LOG_FORMAT=json 시 stderr 출력이 JSON 파싱 가능 + extra.request_id 포함."""
     monkeypatch.setattr(settings, "LOG_FORMAT", "json")
     setup_logging()
@@ -49,7 +52,9 @@ def test_setup_logging_json_format(monkeypatch, capfd):
     assert data["record"]["extra"]["request_id"] == "-"
 
 
-def test_intercept_handler_routes_stdlib_to_loguru(capfd):
+def test_intercept_handler_routes_stdlib_to_loguru(
+    capfd: pytest.CaptureFixture[str],
+) -> None:
     """stdlib `logging.getLogger().warning()` 호출이 loguru sink 로 통과."""
     setup_logging()
     logging.getLogger("test_intercept").warning("via-stdlib")
@@ -57,7 +62,9 @@ def test_intercept_handler_routes_stdlib_to_loguru(capfd):
     assert "via-stdlib" in captured.err
 
 
-def test_intercept_handler_resolves_caller_outside_logging(capfd):
+def test_intercept_handler_resolves_caller_outside_logging(
+    capfd: pytest.CaptureFixture[str],
+) -> None:
     """stdlib intercept 시 caller 가 stdlib logging 내부가 아닌 실제 호출자로 표시.
 
     회귀 가드: 기존 frame skip 로직 (depth=2 시작) 은 emit 의 frame.f_code.co_filename

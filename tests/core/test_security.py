@@ -17,7 +17,7 @@ LEGACY_HASH_ADMIN = "$2b$12$K2aYU8NmZR1xwybLA9UGXeeWIHaYjt/NTDeiPkuOQTq/yVhUhk8X
 # 평문: "admin12345"
 
 
-def test_hash_then_verify_roundtrip():
+def test_hash_then_verify_roundtrip() -> None:
     """새 구현의 hash → verify 라운드트립."""
     plain = "MySecurePassword123!"
     hashed = get_password_hash(plain)
@@ -26,7 +26,7 @@ def test_hash_then_verify_roundtrip():
     assert verify_password("WrongPassword", hashed) is False
 
 
-def test_verify_legacy_passlib_hash():
+def test_verify_legacy_passlib_hash() -> None:
     """passlib 시절 생성된 해시도 새 구현으로 verify 가능해야 한다.
 
     호환성 보장: 기존 DB 의 사용자 비밀번호 (passlib 시절 생성) 가
@@ -39,14 +39,14 @@ def test_verify_legacy_passlib_hash():
     assert verify_password("admin54321", LEGACY_HASH_ADMIN) is False
 
 
-def test_verify_handles_malformed_hash():
+def test_verify_handles_malformed_hash() -> None:
     """잘못된 형식의 해시는 False 를 반환 (예외 X)."""
     assert verify_password("password", "not-a-bcrypt-hash") is False
     assert verify_password("password", "") is False
     assert verify_password("password", "$2b$short") is False
 
 
-def test_get_password_hash_uses_configured_rounds():
+def test_get_password_hash_uses_configured_rounds() -> None:
     """get_password_hash 가 settings.BCRYPT_ROUNDS 를 사용한다."""
     hashed = get_password_hash("test_password")
     # bcrypt 해시 형식: $2b$<rounds>$<salt+hash>
@@ -55,7 +55,7 @@ def test_get_password_hash_uses_configured_rounds():
     assert actual_rounds == settings.BCRYPT_ROUNDS
 
 
-def test_verify_works_across_different_rounds():
+def test_verify_works_across_different_rounds() -> None:
     """라운드가 다른 두 해시를 동일 verify 함수로 검증 가능 (호환성).
 
     라운드 업그레이드 시 기존 해시 (낮은 라운드) 가 새 settings 와 무관하게
@@ -75,7 +75,7 @@ def test_verify_works_across_different_rounds():
     assert verify_password("wrong", default_round_hash) is False
 
 
-def test_needs_rehash_detects_lower_rounds():
+def test_needs_rehash_detects_lower_rounds() -> None:
     """현재 settings 보다 낮은 라운드의 해시는 재해시 대상 (업그레이드)."""
     plain = "test_password"
     low_round = bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt(rounds=4)).decode(
@@ -85,7 +85,7 @@ def test_needs_rehash_detects_lower_rounds():
     assert needs_rehash(low_round) is True
 
 
-def test_needs_rehash_does_not_downgrade():
+def test_needs_rehash_does_not_downgrade() -> None:
     """현재 settings 보다 높은 라운드의 해시는 재해시 대상이 아니다 (다운그레이드 차단).
 
     운영자가 BCRYPT_ROUNDS 를 낮춰도 이미 저장된 강한 해시는 그대로 유지되어야 한다.
@@ -99,13 +99,13 @@ def test_needs_rehash_does_not_downgrade():
     assert needs_rehash(high_round) is False
 
 
-def test_needs_rehash_returns_false_for_current_rounds():
+def test_needs_rehash_returns_false_for_current_rounds() -> None:
     """현재 settings 라운드와 동일한 해시는 재해시 대상이 아님."""
     hashed = get_password_hash("test_password")
     assert needs_rehash(hashed) is False
 
 
-def test_needs_rehash_returns_false_for_malformed_hash():
+def test_needs_rehash_returns_false_for_malformed_hash() -> None:
     """잘못된 형식의 해시는 보수적으로 False (재해시 안 함)."""
     assert needs_rehash("not-a-bcrypt-hash") is False
     assert needs_rehash("") is False

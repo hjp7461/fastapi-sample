@@ -7,6 +7,7 @@ PR #14 후속으로 도입한 enum 결과 패턴이 세 outcome (OK / NOT_FOUND 
 from decimal import Decimal
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.product.domain import NewProduct, ProductCategory
 from app.product.repository import (
@@ -17,7 +18,7 @@ from app.product.repository import (
 
 
 @pytest.mark.asyncio
-async def test_update_inventory_returns_ok_on_success(db_session):
+async def test_update_inventory_returns_ok_on_success(db_session: AsyncSession) -> None:
     """정상 갱신: outcome.OK + product 반영."""
     repo = ProductRepository(db_session)
     product = await repo.create(
@@ -40,7 +41,9 @@ async def test_update_inventory_returns_ok_on_success(db_session):
 
 
 @pytest.mark.asyncio
-async def test_update_inventory_returns_not_found_for_missing_id(db_session):
+async def test_update_inventory_returns_not_found_for_missing_id(
+    db_session: AsyncSession,
+) -> None:
     """없는 id: outcome.NOT_FOUND + product None."""
     repo = ProductRepository(db_session)
 
@@ -51,7 +54,9 @@ async def test_update_inventory_returns_not_found_for_missing_id(db_session):
 
 
 @pytest.mark.asyncio
-async def test_update_inventory_returns_insufficient_when_negative(db_session):
+async def test_update_inventory_returns_insufficient_when_negative(
+    db_session: AsyncSession,
+) -> None:
     """음수 발생: outcome.INSUFFICIENT + 재고 보존."""
     repo = ProductRepository(db_session)
     product = await repo.create(

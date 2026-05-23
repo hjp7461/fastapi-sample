@@ -7,13 +7,14 @@ from typing import Any, Dict
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # pytest-asyncio 8.3.5에서는 이제 Test 클래스 대신 함수에 직접 마커를 적용
 # pytestmark = pytest.mark.asyncio  # 불필요
 
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
-async def test_create_user(client: AsyncClient):
+async def test_create_user(client: AsyncClient) -> None:
     """사용자 생성 테스트."""
     user_data = {
         "email": "newuser@example.com",
@@ -33,7 +34,7 @@ async def test_create_user(client: AsyncClient):
 
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
-async def test_login(client: AsyncClient, test_user: Dict[str, Any]):
+async def test_login(client: AsyncClient, test_user: Dict[str, Any]) -> None:
     """사용자 로그인 테스트."""
     login_data = {
         "username": test_user["email"],  # 이메일을 사용자명으로 사용
@@ -51,8 +52,8 @@ async def test_login(client: AsyncClient, test_user: Dict[str, Any]):
 @pytest.mark.asyncio
 async def test_login_upgrades_old_bcrypt_hash(
     client: AsyncClient,
-    db_session,
-):
+    db_session: AsyncSession,
+) -> None:
     """저장된 비밀번호 해시가 낮은 라운드면, 로그인 직후 자동 업그레이드된다.
 
     PR #7 (bcrypt 라운드 환경별 설정) + 본 PR (lazy rehash) 의 시너지를 검증.
@@ -98,10 +99,10 @@ async def test_login_upgrades_old_bcrypt_hash(
 
 @pytest.mark.asyncio
 async def test_login_logs_warning_on_downgrade(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
     client: AsyncClient,
-    db_session,
-):
+    db_session: AsyncSession,
+) -> None:
     """저장된 해시 라운드가 현재 settings 보다 높으면 다운그레이드 차단 + warning 로깅.
 
     운영자가 BCRYPT_ROUNDS 를 낮춰도 강한 해시는 그대로 유지되어야 하고,
@@ -155,10 +156,10 @@ async def test_login_logs_warning_on_downgrade(
 
 @pytest.mark.asyncio
 async def test_login_logs_exception_on_rehash_failure(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
     client: AsyncClient,
-    db_session,
-):
+    db_session: AsyncSession,
+) -> None:
     """재해시 중 repository.update 가 실패해도 인증은 성공하고 logger.exception 으로
     기록되는지 검증한다.
 
@@ -192,7 +193,7 @@ async def test_login_logs_exception_on_rehash_failure(
     await db_session.refresh(user)
 
     # repository.update 가 예외를 던지도록 패치 — 재해시 흐름의 update 만 잡힘.
-    async def _raise(*_a, **_kw):
+    async def _raise(*_a: object, **_kw: object) -> None:
         raise RuntimeError("simulated DB failure")
 
     monkeypatch.setattr("app.user.repository.UserRepository.update", _raise)
@@ -218,7 +219,7 @@ async def test_login_logs_exception_on_rehash_failure(
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_get_current_user(
     client: AsyncClient, auth_headers: Dict[str, str], test_user: Dict[str, Any]
-):
+) -> None:
     """현재 사용자 정보 조회 테스트."""
     response = await client.get("/api/v1/users/me", headers=auth_headers)
 
@@ -232,7 +233,7 @@ async def test_get_current_user(
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_update_current_user(
     client: AsyncClient, auth_headers: Dict[str, str], test_user: Dict[str, Any]
-):
+) -> None:
     """현재 사용자 정보 업데이트 테스트."""
     update_data = {
         "username": "updateduser",
@@ -255,7 +256,7 @@ async def test_update_current_user(
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_get_user_by_id(
     client: AsyncClient, auth_headers: Dict[str, str], test_user: Dict[str, Any]
-):
+) -> None:
     """특정 사용자 정보 조회 테스트."""
     user_id = test_user["id"]
 
@@ -271,7 +272,7 @@ async def test_get_user_by_id(
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_get_nonexistent_user(
     client: AsyncClient, admin_auth_headers: Dict[str, str]
-):
+) -> None:
     """존재하지 않는 사용자 조회 테스트. 관리자 컨텍스트에서 404 확인."""
     # 일반 사용자로 조회하면 본인이 아니므로 403 이 되어 존재 여부를 leak 하지 않음.
     # 관리자는 권한을 통과하므로 존재 확인 단계까지 진행되어 404 가 반환됨.
@@ -289,7 +290,7 @@ async def test_get_nonexistent_user(
 @pytest.mark.asyncio
 async def test_get_user_by_id_without_auth(
     client: AsyncClient, test_user: Dict[str, Any]
-):
+) -> None:
     """인증 헤더 없이 호출 시 401."""
     response = await client.get(f"/api/v1/users/{test_user['id']}")
 
@@ -301,7 +302,7 @@ async def test_get_other_user_as_regular_user(
     client: AsyncClient,
     auth_headers: Dict[str, str],
     admin_user: Dict[str, Any],
-):
+) -> None:
     """일반 사용자가 다른 사용자(admin_user) 를 조회하면 403."""
     response = await client.get(
         f"/api/v1/users/{admin_user['id']}",
@@ -317,7 +318,7 @@ async def test_get_other_user_as_regular_user(
 async def test_get_self_or_admin_blocks_before_existence_check(
     client: AsyncClient,
     auth_headers: Dict[str, str],
-):
+) -> None:
     """일반 사용자가 존재하지 않는 ID 를 조회해도 403 (404 가 아님).
 
     권한 검사가 존재 확인보다 먼저 평가됨을 자동 회귀로 보장한다.
@@ -337,7 +338,7 @@ async def test_get_other_user_as_admin(
     client: AsyncClient,
     admin_auth_headers: Dict[str, str],
     test_user: Dict[str, Any],
-):
+) -> None:
     """관리자는 다른 사용자도 조회 가능 (UserAdminView 응답).
 
     응답의 email 은 마스킹되어 있고 first_name/last_name 은 제외된다.
@@ -356,7 +357,7 @@ async def test_get_other_user_as_admin(
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_access_admin_endpoint_as_regular_user(
     client: AsyncClient, auth_headers: Dict[str, str]
-):
+) -> None:
     """일반 사용자로 관리자 전용 엔드포인트 접근 시도 테스트."""
     # 일반 사용자가 모든 사용자 목록 조회 시도 (가정: 이 엔드포인트는 관리자 전용)
     response = await client.get("/api/v1/users/", headers=auth_headers)
@@ -370,7 +371,7 @@ async def test_access_admin_endpoint_as_regular_user(
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_access_admin_endpoint_as_admin(
     client: AsyncClient, admin_auth_headers: Dict[str, str]
-):
+) -> None:
     """관리자로 관리자 전용 엔드포인트 접근 테스트."""
     # 관리자가 모든 사용자 목록 조회
     response = await client.get("/api/v1/users/", headers=admin_auth_headers)
@@ -385,7 +386,7 @@ async def test_access_admin_endpoint_as_admin(
 @pytest.mark.asyncio
 async def test_access_admin_endpoint_as_staff_forbidden(
     client: AsyncClient, staff_auth_headers: Dict[str, str]
-):
+) -> None:
     """staff 가 GET /users/ 접근 시 거부 (403).
 
     staff 권한 정책 회귀 가드 — staff 는 product 변경은 가능하지만
@@ -401,7 +402,7 @@ async def test_get_other_user_as_staff_is_forbidden(
     client: AsyncClient,
     staff_auth_headers: Dict[str, str],
     admin_user: Dict[str, Any],
-):
+) -> None:
     """staff 가 다른 사용자 (admin_user) 조회 시 거부 (403).
 
     `require_self_or_admin` 회귀 가드 — staff 는 본인 외 조회에 admin 권한이
@@ -419,7 +420,7 @@ async def test_get_self_returns_full_user_response(
     client: AsyncClient,
     auth_headers: Dict[str, str],
     test_user: Dict[str, Any],
-):
+) -> None:
     """본인 조회 시 first_name/last_name 까지 포함된 UserResponse 반환."""
     response = await client.get(
         f"/api/v1/users/{test_user['id']}", headers=auth_headers
@@ -439,7 +440,7 @@ async def test_get_other_user_as_admin_returns_masked_view(
     client: AsyncClient,
     admin_auth_headers: Dict[str, str],
     test_user: Dict[str, Any],
-):
+) -> None:
     """관리자가 타인 조회 시 UserAdminView — email 마스킹 + 이름 제외."""
     response = await client.get(
         f"/api/v1/users/{test_user['id']}", headers=admin_auth_headers
@@ -463,11 +464,11 @@ async def test_get_other_user_as_admin_returns_masked_view(
 
 @pytest.mark.asyncio
 async def test_admin_view_email_raw_when_masking_disabled(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
     client: AsyncClient,
     admin_auth_headers: Dict[str, str],
     test_user: Dict[str, Any],
-):
+) -> None:
     """USER_ADMIN_EMAIL_MASKING=false 토글 시 관리자→타인 응답 email 이 raw.
 
     기본 (마스킹 ON) 케이스는 `test_get_other_user_as_admin_returns_masked_view`
@@ -491,7 +492,7 @@ async def test_admin_view_email_raw_when_masking_disabled(
 async def test_list_users_returns_summary_without_pii(
     client: AsyncClient,
     admin_auth_headers: Dict[str, str],
-):
+) -> None:
     """관리자 목록 조회는 UserSummary 응답 — PII 필드 0건."""
     response = await client.get("/api/v1/users/", headers=admin_auth_headers)
 
