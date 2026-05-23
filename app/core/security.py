@@ -108,4 +108,7 @@ def decode_access_token(token: str) -> Dict[str, Any]:
     Raises:
         jwt.PyJWTError: 토큰이 유효하지 않을 경우
     """
-    return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    payload: dict[str, Any] = jwt.decode(
+        token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+    )
+    return payload

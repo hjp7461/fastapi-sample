@@ -6,7 +6,7 @@
 스키마 생성/변경은 alembic 으로 관리한다 (`uv run alembic upgrade head`).
 """
 
-from typing import AsyncGenerator
+from typing import AsyncGenerator, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import declarative_base
@@ -21,8 +21,9 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     FastAPI 의존성 주입을 위한 데이터베이스 세션 제공자.
     Container에서 관리하는 async_scoped_session을 사용합니다.
+    `async_scoped_session` 은 AsyncSession 인터페이스 proxy 라 cast 안전.
     """
-    session = Container.db()
+    session = cast(AsyncSession, Container.db())
     try:
         yield session
     finally:
