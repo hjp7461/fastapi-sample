@@ -6,12 +6,12 @@
 
 | 파일                                                       | 다루는 엔드포인트                                                                                                                     |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| [`인증_및_권한.md`](./인증_및_권한.md)                     | `get_current_user`, `get_current_active_admin` 의존성 (다른 모든 보호 엔드포인트의 사전 단계)                                          |
+| [`인증_및_권한.md`](./인증_및_권한.md)                     | `get_current_user` / `get_optional_current_user` 인증 + 권한 가드 (`require_admin` / `require_self_or_admin` / `require_staff_or_admin`) — 모든 보호 엔드포인트의 사전 단계 |
 | [`회원가입_로그인.md`](./회원가입_로그인.md)               | `POST /api/v1/users/`, `POST /api/v1/users/token`                                                                                     |
 | [`사용자_프로필.md`](./사용자_프로필.md)                   | `GET /api/v1/users/me`, `PUT /api/v1/users/me`, `GET /api/v1/users/{user_id}`                                                         |
-| [`사용자_목록_관리자.md`](./사용자_목록_관리자.md)         | `GET /api/v1/users/`                                                                                                                  |
-| [`상품_조회.md`](./상품_조회.md)                           | `GET /api/v1/products/{product_id}`, `GET /api/v1/products/`                                                                          |
-| [`상품_관리_관리자.md`](./상품_관리_관리자.md)             | `POST · PUT · DELETE /api/v1/products/{product_id}`, `PATCH /api/v1/products/{product_id}/inventory`                                  |
+| [`사용자_목록_관리자.md`](./사용자_목록_관리자.md)         | `GET /api/v1/users/` (ADMIN only)                                                                                                     |
+| [`상품_조회.md`](./상품_조회.md)                           | `GET /api/v1/products/{product_id}`, `GET /api/v1/products/` (선택적 인증 → viewer 분기, PR #19)                                       |
+| [`상품_관리_관리자.md`](./상품_관리_관리자.md)             | `POST · PUT · DELETE /api/v1/products/{product_id}`, `PATCH /api/v1/products/{product_id}/inventory` (STAFF + ADMIN)                  |
 
 ## 공통 아키텍처
 
