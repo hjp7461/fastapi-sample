@@ -1,0 +1,25 @@
+# 로컬 git pre-commit 가드.
+#
+# 사용:
+#   uv sync --all-extras        # pre-commit 설치 (dev extras)
+#   uv run pre-commit install   # git hook 활성화 (1회)
+#   uv run pre-commit run --all-files   # 전체 파일 수동 실행
+#
+# ruff rev 는 pyproject.toml 의 `[project.optional-dependencies].dev.ruff`
+# 버전과 일치시킨다 (룰 차이 방지). 후속 ruff 업그레이드 시 두 곳 같이 갱신.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-toml
+      - id: check-yaml
+      - id: check-merge-conflict

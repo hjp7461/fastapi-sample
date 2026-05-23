@@ -74,7 +74,7 @@ SQLAlchemy 2.0의 비동기 기능과 `async_scoped_session`을 사용하여 효
 ```python
 # app/core/database.py (핵심 부분)
 AsyncScopedSession = async_scoped_session(
-    async_session_factory, 
+    async_session_factory,
     scopefunc=asyncio.current_task
 )
 ```
@@ -94,6 +94,23 @@ uv pip install -e .
 # 개발 및 테스트 의존성 포함 설치
 uv pip install -e ".[dev,test]"
 ```
+
+### Pre-commit hook (선택, 권장)
+
+ruff check/format 과 기본 위생 hook (trailing-whitespace, EOF newline 등) 을
+커밋 시점에 자동 실행합니다.
+
+```bash
+# 1회: git hook 활성화
+uv run pre-commit install
+
+# 전체 파일에 한 번 실행 (수동)
+uv run pre-commit run --all-files
+```
+
+이후 `git commit` 시 hook 이 자동 실행되어 lint/포맷 위반이 있으면 차단합니다.
+`.pre-commit-config.yaml` 의 ruff rev 는 `pyproject.toml` 의 ruff 버전과
+일치시켜 두었으므로 룰 차이가 발생하지 않습니다.
 
 ### 환경 변수 설정
 
