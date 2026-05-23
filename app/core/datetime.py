@@ -4,7 +4,8 @@
 SQLModel / SQLAlchemy 의 `default_factory` / `default` / `onupdate`
 콜러블로 직접 전달하기 위해 인자를 받지 않는다.
 """
-from datetime import datetime, UTC
+
+from datetime import UTC, datetime
 
 
 def utcnow_aware() -> datetime:

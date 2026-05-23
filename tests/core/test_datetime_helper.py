@@ -1,4 +1,5 @@
 """`utcnow_aware()` 헬퍼 단위 테스트."""
+
 from datetime import UTC, datetime
 
 from app.core.datetime import utcnow_aware

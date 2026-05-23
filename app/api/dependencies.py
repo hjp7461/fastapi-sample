@@ -1,11 +1,12 @@
 """
 공통 API 의존성.
 """
-from typing import Optional, Union
 
+from typing import Optional
+
+import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-import jwt
 from jwt.exceptions import PyJWTError
 
 from app.core.config import settings
@@ -19,8 +20,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/users/toke
 
 
 async def get_current_user(
-        token: str = Depends(oauth2_scheme),
-        user_service: UserService = Depends(get_user_service),
+    token: str = Depends(oauth2_scheme),
+    user_service: UserService = Depends(get_user_service),
 ) -> User:
     """
     현재 인증된 사용자를 검색합니다.
@@ -34,15 +35,13 @@ async def get_current_user(
     try:
         # JWT 토큰 디코딩
         payload = jwt.decode(
-            token,
-            settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM]
+            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
         user_id: Optional[int] = int(payload.get("sub"))
         if user_id is None:
             raise credentials_exception
     except (PyJWTError, ValueError):
-        raise credentials_exception
+        raise credentials_exception from None
 
     # 사용자 조회
     user = await user_service.get_user(user_id)
@@ -51,16 +50,15 @@ async def get_current_user(
 
     if not user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user"
         )
 
     return user
 
 
 async def get_optional_current_user(
-        request: Request,
-        user_service: UserService = Depends(get_user_service),
+    request: Request,
+    user_service: UserService = Depends(get_user_service),
 ) -> Optional[User]:
     """공개 조회용 옵셔널 인증.
 
@@ -92,5 +90,3 @@ async def get_optional_current_user(
     if not user.is_active:
         return None
     return user
-
-

@@ -2,11 +2,12 @@
 상품 도메인 엔티티 및 값 객체 정의.
 핵심 비즈니스 로직과 규칙을 포함합니다.
 """
+
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Optional, List, Union
+from typing import Optional, Union
 
 
 class ProductCategory(str, Enum):
@@ -21,6 +22,7 @@ class ProductCategory(str, Enum):
 @dataclass
 class Product:
     """상품 도메인 엔티티."""
+
     id: Optional[int] = None
     name: str = ""
     description: Optional[str] = None

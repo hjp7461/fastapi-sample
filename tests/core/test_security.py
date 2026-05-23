@@ -2,11 +2,11 @@
 
 특히 passlib 시절에 생성된 해시의 호환성을 보장한다.
 """
+
 import bcrypt
 
 from app.core.config import settings
 from app.core.security import get_password_hash, needs_rehash, verify_password
-
 
 # passlib 1.7.4 + bcrypt 가 생성한 실제 해시 (마이그레이션 PR 시점에 박제).
 # 이 해시들은 새 구현 (bcrypt 직접 사용) 으로도 동일하게 verify 되어야 한다.
@@ -78,9 +78,9 @@ def test_verify_works_across_different_rounds():
 def test_needs_rehash_detects_lower_rounds():
     """현재 settings 보다 낮은 라운드의 해시는 재해시 대상 (업그레이드)."""
     plain = "test_password"
-    low_round = bcrypt.hashpw(
-        plain.encode("utf-8"), bcrypt.gensalt(rounds=4)
-    ).decode("utf-8")
+    low_round = bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt(rounds=4)).decode(
+        "utf-8"
+    )
 
     assert needs_rehash(low_round) is True
 

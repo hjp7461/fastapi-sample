@@ -2,8 +2,9 @@
 보안 관련 유틸리티 함수.
 암호화, 토큰 생성 및 검증 등을 포함합니다.
 """
+
 # from datetime import datetime, timedelta
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, Optional, Union
 
 import bcrypt
@@ -69,7 +70,7 @@ def needs_rehash(hashed_password: str) -> bool:
 
 
 def create_access_token(
-        subject: Union[str, Any], expires_delta: Optional[timedelta] = None
+    subject: Union[str, Any], expires_delta: Optional[timedelta] = None
 ) -> str:
     """
     JWT 액세스 토큰을 생성합니다.
@@ -88,7 +89,9 @@ def create_access_token(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
     to_encode = {"exp": expire, "sub": str(subject)}
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    encoded_jwt = jwt.encode(
+        to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
+    )
     return encoded_jwt
 
 
@@ -105,8 +108,4 @@ def decode_access_token(token: str) -> Dict[str, Any]:
     Raises:
         jwt.PyJWTError: 토큰이 유효하지 않을 경우
     """
-    return jwt.decode(
-        token,
-        settings.SECRET_KEY,
-        algorithms=[settings.ALGORITHM]
-    )
+    return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])

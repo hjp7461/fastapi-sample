@@ -2,12 +2,12 @@
 상품 데이터 액세스 레이어.
 데이터베이스와의 상호작용을 담당합니다.
 """
+
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Dict, Any
-from decimal import Decimal
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.product.domain import Product, ProductCategory
@@ -21,6 +21,7 @@ class InventoryUpdateOutcome(Enum):
     - NOT_FOUND: 해당 product_id 가 존재하지 않음
     - INSUFFICIENT: 갱신 시 음수 재고 발생 (재고 부족)
     """
+
     OK = "ok"
     NOT_FOUND = "not_found"
     INSUFFICIENT = "insufficient"
@@ -32,6 +33,7 @@ class InventoryUpdateResult:
 
     `outcome` 이 `OK` 일 때만 `product` 가 유효한 도메인 객체. 그 외는 `None`.
     """
+
     outcome: InventoryUpdateOutcome
     product: Optional[Product] = None
 
@@ -52,7 +54,7 @@ class ProductRepository:
             price=product.price,
             category=product.category,
             inventory=product.inventory,
-            is_active=product.is_active
+            is_active=product.is_active,
         )
         self.session.add(db_product)
         await self.session.commit()
@@ -69,7 +71,9 @@ class ProductRepository:
             return self._to_domain(db_product)
         return None
 
-    async def update(self, product_id: int, product_data: Dict[str, Any]) -> Optional[Product]:
+    async def update(
+        self, product_id: int, product_data: Dict[str, Any]
+    ) -> Optional[Product]:
         """상품 정보를 업데이트합니다."""
         # 먼저 상품이 존재하는지 확인
         result = await self.session.execute(
@@ -108,11 +112,11 @@ class ProductRepository:
         return result.rowcount > 0
 
     async def list(
-            self,
-            skip: int = 0,
-            limit: int = 100,
-            category: Optional[ProductCategory] = None,
-            is_active: Optional[bool] = None
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        category: Optional[ProductCategory] = None,
+        is_active: Optional[bool] = None,
     ) -> List[Product]:
         """상품 목록을 조회합니다."""
         query = select(ProductModel)
@@ -130,7 +134,7 @@ class ProductRepository:
         return [self._to_domain(product) for product in result.scalars().all()]
 
     async def update_inventory(
-            self, product_id: int, quantity_change: int
+        self, product_id: int, quantity_change: int
     ) -> InventoryUpdateResult:
         """원자적 재고 변경.
 
@@ -180,5 +184,5 @@ class ProductRepository:
             inventory=db_product.inventory,
             is_active=db_product.is_active,
             created_at=db_product.created_at,
-            updated_at=db_product.updated_at
+            updated_at=db_product.updated_at,
         )

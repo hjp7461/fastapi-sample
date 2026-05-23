@@ -2,6 +2,7 @@
 
 권한 계층 (CUSTOMER ⊂ STAFF ⊂ ADMIN) 의 의도가 코드에 정확히 표현되어 있는지 검증.
 """
+
 from app.user.domain import User, UserRole
 
 
