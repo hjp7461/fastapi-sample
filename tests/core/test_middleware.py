@@ -43,6 +43,11 @@ def _log_probe() -> dict[str, bool]:
     return {"ok": True}
 
 
+def _raise_handler() -> None:
+    """access log 예외 케이스 회귀 가드용 핸들러."""
+    raise RuntimeError("intentional-test-failure")
+
+
 @pytest.fixture(autouse=True, scope="module")
 def _probe_routes():
     """테스트용 임시 라우트 2개를 등록 + 모듈 종료 시 제거.
@@ -53,15 +58,15 @@ def _probe_routes():
     test_router = APIRouter()
     test_router.add_api_route("/__test_request_id", _read_request_id, methods=["GET"])
     test_router.add_api_route("/__test_log_probe", _log_probe, methods=["GET"])
+    test_router.add_api_route("/__test_raise", _raise_handler, methods=["GET"])
     app.include_router(test_router)
 
     yield
 
     # teardown: 본 router 의 routes 만 제거 (다른 라우트 영향 없도록)
+    _test_paths = ("/__test_request_id", "/__test_log_probe", "/__test_raise")
     app.router.routes = [
-        r
-        for r in app.router.routes
-        if getattr(r, "path", None) not in ("/__test_request_id", "/__test_log_probe")
+        r for r in app.router.routes if getattr(r, "path", None) not in _test_paths
     ]
 
 
@@ -321,3 +326,32 @@ def test_uvicorn_access_logger_disabled():
         f"uvicorn.access 의 handlers 비어있어야 함. 실제: {access_logger.handlers!r}"
     )
     assert access_logger.propagate is False
+
+
+# ---------------------------------------------------------------------------
+# AccessLogMiddleware exception handling (PR #36)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_access_log_emitted_on_route_exception(client: AsyncClient, capfd):
+    """라우트 핸들러가 raise 해도 access log 한 줄 출력 + status=500.
+
+    httpx ASGITransport + starlette BaseHTTPMiddleware 조합에서 라우트 예외는
+    ExceptionGroup 으로 외부 전파될 수 있음 (실제 uvicorn server 환경에서는
+    ServerErrorMiddleware 가 500 응답으로 변환). 본 PR 의 핵심은 dispatch 의
+    finally 가 호출되어 access log 가 누락되지 않는지 — 응답 status 가 아닌
+    finally 동작 회귀 가드.
+    """
+    setup_logging()
+
+    # ExceptionGroup: starlette BaseHTTPMiddleware anyio task group 경유 변종.
+    # RuntimeError: 환경에 따라 ASGITransport 가 raw 예외 전파하는 경우.
+    with pytest.raises((RuntimeError, ExceptionGroup)):
+        await client.get("/__test_raise")
+
+    captured = capfd.readouterr()
+    matches = re.findall(r'"GET /__test_raise HTTP/\S+" 500 \d+\.\d+ms', captured.err)
+    assert matches, (
+        f"예외 발생 시 access log (status=500) 누락. 실제 stderr:\n{captured.err}"
+    )

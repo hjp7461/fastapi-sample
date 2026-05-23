@@ -80,6 +80,10 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
     uvicorn 의 기본 access log 는 `setup_logging()` 에서 비활성화되어 본
     미들웨어가 단일 진실원.
 
+    예외 처리: `call_next` 가 raise 해도 try/finally 로 access log 한 줄은
+    반드시 출력 (status=500 fallback). raise 는 catch 없이 자동 전파되어
+    starlette `ServerErrorMiddleware` 가 traceback / 500 응답 책임.
+
     format 은 uvicorn 호환 (`{client} "{method} {path} HTTP/{version}" {status}`)
     + 디버깅용 elapsed_ms 추가.
     """
@@ -89,16 +93,22 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next) -> Response:
         start = time.perf_counter()
-        response = await call_next(request)
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        client = request.client.host if request.client else "-"
-        logger.info(
-            '{client} "{method} {path} HTTP/{version}" {status} {elapsed_ms:.2f}ms',
-            client=client,
-            method=request.method,
-            path=request.url.path,
-            version=request.scope.get("http_version", "?"),
-            status=response.status_code,
-            elapsed_ms=elapsed_ms,
-        )
-        return response
+        # call_next 가 raise 시 finally 에서 사용될 fallback. 사용자 exception
+        # handler 가 다른 status 로 변환할 수도 있지만, "예외 발생" 시그널은 500.
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            return response
+        finally:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            client = request.client.host if request.client else "-"
+            logger.info(
+                '{client} "{method} {path} HTTP/{version}" {status} {elapsed_ms:.2f}ms',
+                client=client,
+                method=request.method,
+                path=request.url.path,
+                version=request.scope.get("http_version", "?"),
+                status=status,
+                elapsed_ms=elapsed_ms,
+            )
