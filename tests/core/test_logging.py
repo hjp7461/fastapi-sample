@@ -55,3 +55,28 @@ def test_intercept_handler_routes_stdlib_to_loguru(capfd):
     logging.getLogger("test_intercept").warning("via-stdlib")
     captured = capfd.readouterr()
     assert "via-stdlib" in captured.err
+
+
+def test_intercept_handler_resolves_caller_outside_logging(capfd):
+    """stdlib intercept 시 caller 가 stdlib logging 내부가 아닌 실제 호출자로 표시.
+
+    회귀 가드: 기존 frame skip 로직 (depth=2 시작) 은 emit 의 frame.f_code.co_filename
+    이 logging.__file__ 과 달라 while 미진입 → caller 가 `logging:callHandlers:1762`
+    로 잘못 표시되었음.
+    """
+    setup_logging()
+    logging.getLogger("test_intercept_caller").info("intercept-frame-probe")
+    captured = capfd.readouterr()
+
+    assert "intercept-frame-probe" in captured.err
+
+    # 회귀 가드 — stdlib logging 내부 (callHandlers / handle 등) 가 caller 로 노출 X
+    assert "logging:callHandlers" not in captured.err, (
+        f"InterceptHandler frame skip 회귀. 실제 stderr:\n{captured.err}"
+    )
+
+    # caller 위치 식별 — 테스트 모듈/함수 흔적 (ANSI escape 영향 없게 substring 매칭)
+    assert (
+        "test_intercept_handler_resolves_caller_outside_logging" in captured.err
+        or "test_logging" in captured.err
+    ), f"caller 위치 식별 실패. 실제 stderr:\n{captured.err}"
