@@ -10,10 +10,12 @@ loguru 에 통과시켜 로깅 표면을 단일화한다.
 
 import logging
 import sys
+from typing import Any
 
 from loguru import logger
 
 from app.core.config import settings
+from app.core.context import get_request_id
 
 
 class InterceptHandler(logging.Handler):
@@ -42,11 +44,22 @@ class InterceptHandler(logging.Handler):
 _TEXT_FORMAT = (
     "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
     "<level>{level: <8}</level> | "
+    "<cyan>{extra[request_id]}</cyan> | "
     "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
     "<level>{message}</level>"
 )
 
 _JSON_FORMAT = "{message}"
+
+
+def _inject_request_id(record: Any) -> None:
+    """모든 로그 record 의 extra 에 현재 request_id 첨부.
+
+    `logger.configure(patcher=...)` 로 등록되어 sink 도달 전에 호출된다.
+    record 는 loguru 의 내부 Record (dict-like) — 외부에 노출되지 않아 `Any` 로 둔다.
+    요청 컨텍스트 밖에서는 default "-" 가 들어간다 (`context.py` 참고).
+    """
+    record["extra"]["request_id"] = get_request_id()
 
 
 def setup_logging() -> None:
@@ -56,8 +69,10 @@ def setup_logging() -> None:
     - default loguru handler 제거 후 stderr sink 재구성 (중복 출력 차단)
     - LOG_FILE 설정 시 file sink 추가
     - stdlib logging → loguru intercept (uvicorn / sqlalchemy 노이즈 통일)
+    - request_id 자동 첨부 (`RequestIDMiddleware` + `_inject_request_id` patcher)
     """
     logger.remove()
+    logger.configure(patcher=_inject_request_id)
 
     is_json = settings.LOG_FORMAT == "json"
     sink_format = _JSON_FORMAT if is_json else _TEXT_FORMAT

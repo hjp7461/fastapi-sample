@@ -24,16 +24,18 @@ def restore_logger():
 
 
 def test_setup_logging_text_default(capfd):
-    """default LOG_FORMAT=text 시 stderr 에 사람 친화 포맷으로 출력."""
+    """default LOG_FORMAT=text → stderr 사람 친화 포맷 + request_id 컬럼."""
     setup_logging()
     logger.warning("probe-text")
     captured = capfd.readouterr()
     assert "WARNING" in captured.err
     assert "probe-text" in captured.err
+    # 요청 컨텍스트 밖에서는 default "-" 가 request_id 컬럼에 들어간다.
+    assert " - " in captured.err  # "-" placeholder 가 컬럼 사이에 보임
 
 
 def test_setup_logging_json_format(monkeypatch, capfd):
-    """LOG_FORMAT=json 시 stderr 출력이 JSON 파싱 가능."""
+    """LOG_FORMAT=json 시 stderr 출력이 JSON 파싱 가능 + extra.request_id 포함."""
     monkeypatch.setattr(settings, "LOG_FORMAT", "json")
     setup_logging()
     logger.warning("probe-json")
@@ -43,6 +45,8 @@ def test_setup_logging_json_format(monkeypatch, capfd):
     data = json.loads(last_line)
     assert data["record"]["message"] == "probe-json"
     assert data["record"]["level"]["name"] == "WARNING"
+    # 요청 컨텍스트 밖에서는 default "-" 가 들어간다.
+    assert data["record"]["extra"]["request_id"] == "-"
 
 
 def test_intercept_handler_routes_stdlib_to_loguru(capfd):

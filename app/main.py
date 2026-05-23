@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.logging import setup_logging
+from app.core.middleware import RequestIDMiddleware
 from app.di.containers import Container
 
 # 로깅 단일 진입점 — sink/포맷/레벨 환경 변수 기반 구성
@@ -55,6 +56,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 요청별 trace ID — contextvar 저장 + 응답 X-Request-ID 헤더.
+# Starlette middleware 는 add 역순 wrap (마지막에 add 한 것이 outermost) — 모든 응답에
+# 헤더가 보장되도록 마지막에 추가한다.
+app.add_middleware(RequestIDMiddleware)
 
 # 컨테이너 설정
 app.container = container
