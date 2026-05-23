@@ -119,15 +119,15 @@ uv run pre-commit run --all-files
 
 ### 환경 변수 설정
 
-`.env` 파일을 생성하고 필요한 환경 변수를 설정합니다:
+환경 변수 매트릭스의 진실원은 [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §2 입니다.
+빠른 시작에는 `.env.example` 을 복사하세요:
 
 ```bash
-# .env
-SECRET_KEY=your-secret-key
-DATABASE_URL=sqlite+aiosqlite:///./app.db
-ENVIRONMENT=development
-LOG_LEVEL=DEBUG
+cp .env.example .env
+# 필요한 값만 수정 (특히 SECRET_KEY 는 운영에서 반드시 무작위 값으로)
 ```
+
+전체 변수 목록 / 기본값 / 의미는 RUNBOOK §2 표를 참고하세요. 본 README 는 인덱스만 제공합니다.
 
 ### 데이터베이스 마이그레이션
 
