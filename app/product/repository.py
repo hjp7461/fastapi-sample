@@ -2,15 +2,38 @@
 상품 데이터 액세스 레이어.
 데이터베이스와의 상호작용을 담당합니다.
 """
+from dataclasses import dataclass
+from enum import Enum
 from typing import List, Optional, Dict, Any
 from decimal import Decimal
 
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import BusinessLogicException
 from app.product.domain import Product, ProductCategory
 from app.product.models import ProductModel
+
+
+class InventoryUpdateOutcome(Enum):
+    """`update_inventory` 의 세 결과를 명시.
+
+    - OK: 갱신 성공
+    - NOT_FOUND: 해당 product_id 가 존재하지 않음
+    - INSUFFICIENT: 갱신 시 음수 재고 발생 (재고 부족)
+    """
+    OK = "ok"
+    NOT_FOUND = "not_found"
+    INSUFFICIENT = "insufficient"
+
+
+@dataclass(frozen=True)
+class InventoryUpdateResult:
+    """`update_inventory` 의 결과 객체.
+
+    `outcome` 이 `OK` 일 때만 `product` 가 유효한 도메인 객체. 그 외는 `None`.
+    """
+    outcome: InventoryUpdateOutcome
+    product: Optional[Product] = None
 
 
 class ProductRepository:
@@ -106,18 +129,17 @@ class ProductRepository:
         result = await self.session.execute(query)
         return [self._to_domain(product) for product in result.scalars().all()]
 
-    async def update_inventory(self, product_id: int, quantity_change: int) -> Optional[Product]:
+    async def update_inventory(
+            self, product_id: int, quantity_change: int
+    ) -> InventoryUpdateResult:
         """원자적 재고 변경.
 
         조건부 단일 UPDATE 로 race condition 을 차단한다.
         `inventory + quantity_change >= 0` 조건이 DB 레벨에서 평가되므로
         동시 차감 시에도 음수 재고가 발생할 수 없다.
 
-        반환:
-            Product : 갱신 성공
-            None    : 상품 없음
-        예외:
-            BusinessLogicException : 재고 부족 (변경 시 음수 발생)
+        결과는 도메인 예외 없이 명시 outcome 으로 반환 — 호출자 (service) 가
+        outcome 별로 적절한 도메인 예외로 변환한다.
         """
         result = await self.session.execute(
             update(ProductModel)
@@ -134,17 +156,18 @@ class ProductRepository:
             )
             db_product = select_result.scalars().first()
             if db_product is None:
-                return None
-            raise BusinessLogicException(
-                f"Not enough inventory for product {product_id}"
-            )
+                return InventoryUpdateResult(outcome=InventoryUpdateOutcome.NOT_FOUND)
+            return InventoryUpdateResult(outcome=InventoryUpdateOutcome.INSUFFICIENT)
 
         # 갱신된 결과 재조회
         select_result = await self.session.execute(
             select(ProductModel).where(ProductModel.id == product_id)
         )
         db_product = select_result.scalars().first()
-        return self._to_domain(db_product)
+        return InventoryUpdateResult(
+            outcome=InventoryUpdateOutcome.OK,
+            product=self._to_domain(db_product),
+        )
 
     def _to_domain(self, db_product: ProductModel) -> Product:
         """데이터베이스 모델을 도메인 엔티티로 변환합니다."""

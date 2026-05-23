@@ -7,7 +7,10 @@ from decimal import Decimal
 
 from app.core.exceptions import NotFoundException, ValidationException, BusinessLogicException
 from app.product.domain import Product, ProductCategory
-from app.product.repository import ProductRepository
+from app.product.repository import (
+    InventoryUpdateOutcome,
+    ProductRepository,
+)
 
 
 class ProductService:
@@ -73,11 +76,23 @@ class ProductService:
     async def update_inventory(self, product_id: int, quantity_change: int) -> Product:
         """상품 재고를 업데이트합니다.
 
-        존재 확인과 재고 부족 검증은 repository 의 조건부 UPDATE 가 담당한다.
+        repository 가 반환하는 `InventoryUpdateResult` 의 outcome 을 명시 분기해
+        도메인 예외로 변환한다. 존재 확인과 재고 부족 검증은 repository 의
+        조건부 UPDATE 가 원자적으로 담당.
         """
-        product = await self.product_repository.update_inventory(
+        result = await self.product_repository.update_inventory(
             product_id, quantity_change
         )
-        if product is None:
-            raise NotFoundException(f"Product with ID {product_id} not found")
-        return product
+
+        match result.outcome:
+            case InventoryUpdateOutcome.OK:
+                assert result.product is not None
+                return result.product
+            case InventoryUpdateOutcome.NOT_FOUND:
+                raise NotFoundException(
+                    f"Product with ID {product_id} not found"
+                )
+            case InventoryUpdateOutcome.INSUFFICIENT:
+                raise BusinessLogicException(
+                    f"Not enough inventory for product {product_id}"
+                )
