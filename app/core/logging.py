@@ -8,6 +8,7 @@ stdlib `logging` 호출 (uvicorn / sqlalchemy / FastAPI) 도 `InterceptHandler` 
 loguru 에 통과시켜 로깅 표면을 단일화한다.
 """
 
+import inspect
 import logging
 import sys
 from typing import Any
@@ -30,9 +31,19 @@ class InterceptHandler(logging.Handler):
         except ValueError:
             level = record.levelno
 
-        # caller frame 찾기 (loguru 가 호출 위치를 정확히 표시하도록)
-        frame, depth = logging.currentframe(), 2
-        while frame and frame.f_code.co_filename == logging.__file__:
+        # caller frame 찾기 — loguru 공식 권장 패턴.
+        # depth=0 시작 + (depth == 0) 조건으로 emit 자체 frame 강제 skip.
+        # is_logging: stdlib logging 내부 (handle / callHandlers 등) skip.
+        # is_frozen: importlib._bootstrap (asyncio / threading 등) skip.
+        # 기존 (depth=2 시작 + filename 단일 비교) 은 emit 의 frame 이 우리 파일
+        # 이라 while 미진입 → caller 가 stdlib callHandlers 로 잘못 표시되던 버그.
+        frame, depth = inspect.currentframe(), 0
+        while frame:
+            filename = frame.f_code.co_filename
+            is_logging = filename == logging.__file__
+            is_frozen = "importlib" in filename and "_bootstrap" in filename
+            if depth > 0 and not (is_logging or is_frozen):
+                break
             frame = frame.f_back
             depth += 1
 
