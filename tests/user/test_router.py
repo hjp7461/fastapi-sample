@@ -430,6 +430,32 @@ async def test_get_other_user_as_admin_returns_masked_view(
 
 
 @pytest.mark.asyncio
+async def test_admin_view_email_raw_when_masking_disabled(
+    monkeypatch,
+    client: AsyncClient,
+    admin_auth_headers: Dict[str, str],
+    test_user: Dict[str, Any],
+):
+    """USER_ADMIN_EMAIL_MASKING=false 토글 시 관리자→타인 응답 email 이 raw.
+
+    기본 (마스킹 ON) 케이스는 `test_get_other_user_as_admin_returns_masked_view`
+    가 커버. 본 케이스는 토글 해제만 검증.
+    """
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "USER_ADMIN_EMAIL_MASKING", False)
+
+    response = await client.get(
+        f"/api/v1/users/{test_user['id']}", headers=admin_auth_headers
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["email"] == test_user["email"]
+    assert "***" not in data["email"]
+
+
+@pytest.mark.asyncio
 async def test_list_users_returns_summary_without_pii(
     client: AsyncClient,
     admin_auth_headers: Dict[str, str],

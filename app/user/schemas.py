@@ -7,6 +7,7 @@ from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.core.config import settings
 from app.user.domain import UserRole
 from app.user.masking import mask_email
 
@@ -63,8 +64,9 @@ class UserResponse(UserBase):
 class UserAdminView(BaseModel):
     """관리자가 타인을 상세 조회할 때의 응답 — PII 최소화.
 
-    - email 은 마스킹된 형태 (`a***@e***.com`)
-    - first_name / last_name 은 응답에서 제외
+    - email 은 기본 마스킹 (`a***@e***.com`).
+      `settings.USER_ADMIN_EMAIL_MASKING=false` 면 raw email 노출 (dev 디버깅용).
+    - first_name / last_name 은 응답에서 제외 (스키마 자체 — 토글 불가)
     """
 
     id: int
@@ -94,11 +96,16 @@ class UserSummary(BaseModel):
 
 
 def build_admin_view(user) -> UserAdminView:
-    """도메인 User 를 관리자용 마스킹 응답으로 변환."""
+    """도메인 User 를 관리자용 응답으로 변환.
+
+    email 마스킹은 `settings.USER_ADMIN_EMAIL_MASKING` 에 따라 결정.
+    기본 True (마스킹 ON, 운영 안전). False 명시 시 raw email.
+    """
+    email = mask_email(user.email) if settings.USER_ADMIN_EMAIL_MASKING else user.email
     return UserAdminView(
         id=user.id,
         username=user.username,
-        email=mask_email(user.email),
+        email=email,
         role=user.role,
         is_active=user.is_active,
         created_at=user.created_at,
