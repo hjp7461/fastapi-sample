@@ -5,15 +5,10 @@ HTTP 요청을 처리하고 적절한 서비스를 호출합니다.
 
 from typing import Any, List, Optional, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import get_optional_current_user
 from app.api.permissions import require_staff_or_admin
-from app.core.exceptions import (
-    BusinessLogicException,
-    NotFoundException,
-    ValidationException,
-)
 from app.di.providers import get_product_service
 from app.product.domain import ProductCategory
 from app.product.schemas import (
@@ -37,13 +32,7 @@ async def create_product(
     current_user: Any = Depends(require_staff_or_admin),
 ) -> Any:
     """새 상품을 생성합니다. (staff/admin 전용)"""
-    try:
-        product = await product_service.create_product(product_in.model_dump())
-        return product
-    except ValidationException as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
-        ) from e
+    return await product_service.create_product(product_in.model_dump())
 
 
 @router.get("/{product_id}", response_model=Union[ProductPublicView, ProductResponse])
@@ -57,10 +46,7 @@ async def get_product_by_id(
     - viewer 가 staff/admin → `ProductResponse` (전체, inventory 포함)
     - 그 외 (anonymous / 일반 사용자) → `ProductPublicView` (inventory 제외)
     """
-    try:
-        product = await product_service.get_product(product_id)
-    except NotFoundException as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    product = await product_service.get_product(product_id)
 
     if current_user is not None and current_user.is_staff_or_above():
         return product
@@ -75,12 +61,9 @@ async def update_product(
     current_user: Any = Depends(require_staff_or_admin),
 ) -> Any:
     """상품 정보를 업데이트합니다. (staff/admin 전용)"""
-    try:
-        return await product_service.update_product(
-            product_id, product_in.model_dump(exclude_unset=True)
-        )
-    except NotFoundException as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    return await product_service.update_product(
+        product_id, product_in.model_dump(exclude_unset=True)
+    )
 
 
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -90,10 +73,7 @@ async def delete_product(
     current_user: Any = Depends(require_staff_or_admin),
 ) -> None:
     """상품을 삭제합니다. (staff/admin 전용)"""
-    try:
-        await product_service.delete_product(product_id)
-    except NotFoundException as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    await product_service.delete_product(product_id)
 
 
 @router.get(
@@ -132,13 +112,6 @@ async def update_product_inventory(
     current_user: Any = Depends(require_staff_or_admin),
 ) -> Any:
     """상품 재고를 업데이트합니다. (staff/admin 전용)"""
-    try:
-        return await product_service.update_inventory(
-            product_id, inventory_update.quantity_change
-        )
-    except NotFoundException as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
-    except BusinessLogicException as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
-        ) from e
+    return await product_service.update_inventory(
+        product_id, inventory_update.quantity_change
+    )

@@ -10,7 +10,6 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.dependencies import get_current_user
 from app.api.permissions import require_admin, require_self_or_admin
-from app.core.exceptions import NotFoundException, ValidationException
 from app.di.providers import get_user_service
 from app.user.domain import User
 from app.user.schemas import (
@@ -33,13 +32,7 @@ async def create_user(
     user_in: UserCreate, user_service: UserService = Depends(get_user_service)
 ) -> Any:
     """새 사용자를 생성합니다."""
-    try:
-        user = await user_service.create_user(user_in.model_dump())
-        return user
-    except ValidationException as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
-        ) from e
+    return await user_service.create_user(user_in.model_dump())
 
 
 @router.get("/me", response_model=UserResponse)
@@ -55,13 +48,9 @@ async def update_current_user(
     user_service: UserService = Depends(get_user_service),
 ) -> Any:
     """현재 인증된 사용자 정보를 업데이트합니다."""
-    try:
-        user = await user_service.update_user(
-            current_user.id, user_in.model_dump(exclude_unset=True)
-        )
-        return user
-    except NotFoundException as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    return await user_service.update_user(
+        current_user.id, user_in.model_dump(exclude_unset=True)
+    )
 
 
 @router.post("/token", response_model=Token)
@@ -95,10 +84,7 @@ async def get_user_by_id(
     - 본인 조회: `UserResponse` (전체 PII)
     - 관리자가 타인 조회: `UserAdminView` (email 마스킹 + 이름 제외)
     """
-    try:
-        user = await user_service.get_user(user_id)
-    except NotFoundException as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    user = await user_service.get_user(user_id)
 
     if current_user.id == user.id:
         return user

@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import settings
+from app.core.exceptions import register_exception_handlers
 from app.core.logging import setup_logging
 from app.core.middleware import AccessLogMiddleware, RequestIDMiddleware
 from app.di.containers import Container
@@ -48,6 +49,9 @@ app = FastAPI(
     redoc_url=f"{settings.API_V1_STR}/redoc",
     lifespan=lifespan,  # lifespan 컨텍스트 매니저 설정
 )
+
+# 도메인 예외 → HTTP status 자동 변환 (단일 진실원: app/core/exceptions.py)
+register_exception_handlers(app)
 
 # CORS 설정
 app.add_middleware(
