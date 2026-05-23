@@ -37,12 +37,47 @@ class ProductUpdate(BaseModel):
 
 
 class ProductResponse(ProductBase):
-    """상품 정보 응답."""
+    """관리/staff 응답 — 전체 필드 (inventory 포함).
+
+    `GET /products/{id}` 와 `GET /products/` 에서 viewer 가 staff 이상일 때 사용.
+    POST/PUT/PATCH inventory 응답에도 사용 (모두 admin 권한).
+    """
     id: int
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ProductPublicView(BaseModel):
+    """구매자/공개 응답 — inventory 제외.
+
+    재고 수량은 영업 정보이므로 공개 조회에서 노출하지 않는다.
+    """
+    id: int
+    name: str
+    description: Optional[str] = None
+    price: Decimal
+    category: ProductCategory
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+def build_public_view(product) -> ProductPublicView:
+    """도메인 Product 를 공개용으로 변환 (inventory 제외)."""
+    return ProductPublicView(
+        id=product.id,
+        name=product.name,
+        description=product.description,
+        price=product.price,
+        category=product.category,
+        is_active=product.is_active,
+        created_at=product.created_at,
+        updated_at=product.updated_at,
+    )
 
 
 class ProductInventoryUpdate(BaseModel):

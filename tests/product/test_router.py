@@ -212,8 +212,10 @@ async def test_update_inventory_as_admin(
         "quantity_change": 5  # 재고 5개 증가
     }
 
-    # 먼저 현재 재고 확인
-    initial_response = await client.get(f"/api/v1/products/{product_id}")
+    # 먼저 현재 재고 확인 (admin 컨텍스트 — public view 는 inventory 없음)
+    initial_response = await client.get(
+        f"/api/v1/products/{product_id}", headers=admin_auth_headers
+    )
     initial_inventory = initial_response.json()["inventory"]
 
     # 재고 업데이트
@@ -267,8 +269,10 @@ async def test_update_inventory_insufficient(
     data = response.json()
     assert "detail" in data
 
-    # silent failure 방지: 재고가 변경되지 않았는지 확인
-    get_response = await client.get(f"/api/v1/products/{product_id}")
+    # silent failure 방지: 재고가 변경되지 않았는지 확인 (admin 컨텍스트 필요)
+    get_response = await client.get(
+        f"/api/v1/products/{product_id}", headers=admin_auth_headers
+    )
     assert get_response.status_code == 200
     assert get_response.json()["inventory"] == 10
 
@@ -304,8 +308,10 @@ async def test_update_inventory_concurrent_deduction(
     statuses = sorted(r.status_code for r in responses)
     assert statuses == [200, 400], f"기대: [200, 400], 실제: {statuses}"
 
-    # 최종 재고는 0 (음수 아님)
-    get_response = await client.get(f"/api/v1/products/{product_id}")
+    # 최종 재고는 0 (음수 아님) — admin 컨텍스트로 확인
+    get_response = await client.get(
+        f"/api/v1/products/{product_id}", headers=admin_auth_headers
+    )
     assert get_response.json()["inventory"] == 0
 
 
@@ -361,3 +367,93 @@ async def test_filter_products_by_active_status(client: AsyncClient):
     # 모든 상품이 활성 상태인지 확인
     for product in data:
         assert product["is_active"] is True
+
+
+# ----------------------------------------------------------------------------
+# 조회 컨텍스트 분리 회귀 가드 (PR #19)
+# ----------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_product_anonymous_returns_public_view(
+        client: AsyncClient,
+        test_product: Dict[str, Any],
+):
+    """인증 없는 조회 → ProductPublicView (inventory 없음)."""
+    response = await client.get(f"/api/v1/products/{test_product['id']}")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == test_product["id"]
+    assert data["name"] == test_product["name"]
+    assert "inventory" not in data
+
+
+@pytest.mark.asyncio
+async def test_get_product_as_customer_returns_public_view(
+        client: AsyncClient,
+        auth_headers: Dict[str, str],
+        test_product: Dict[str, Any],
+):
+    """일반 사용자 조회 → ProductPublicView (inventory 없음)."""
+    response = await client.get(
+        f"/api/v1/products/{test_product['id']}", headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == test_product["id"]
+    assert "inventory" not in data
+
+
+@pytest.mark.asyncio
+async def test_get_product_as_admin_returns_full(
+        client: AsyncClient,
+        admin_auth_headers: Dict[str, str],
+        test_product: Dict[str, Any],
+):
+    """관리자 조회 → ProductResponse (inventory 포함)."""
+    response = await client.get(
+        f"/api/v1/products/{test_product['id']}", headers=admin_auth_headers
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == test_product["id"]
+    assert "inventory" in data
+    assert data["inventory"] == 10  # test_product fixture
+
+
+@pytest.mark.asyncio
+async def test_list_products_anonymous_excludes_inventory(
+        client: AsyncClient,
+        test_product: Dict[str, Any],
+):
+    """인증 없는 목록 → 모든 항목 inventory 없음."""
+    response = await client.get("/api/v1/products/")
+
+    assert response.status_code == 200
+    items = response.json()
+    assert isinstance(items, list)
+    assert len(items) > 0
+    for item in items:
+        assert "inventory" not in item
+
+
+@pytest.mark.asyncio
+async def test_list_products_as_admin_includes_inventory(
+        client: AsyncClient,
+        admin_auth_headers: Dict[str, str],
+        test_product: Dict[str, Any],
+):
+    """관리자 목록 → 모든 항목 inventory 포함."""
+    response = await client.get(
+        "/api/v1/products/", headers=admin_auth_headers
+    )
+
+    assert response.status_code == 200
+    items = response.json()
+    assert isinstance(items, list)
+    assert len(items) > 0
+    for item in items:
+        assert "inventory" in item
