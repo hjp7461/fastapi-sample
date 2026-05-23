@@ -9,11 +9,8 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from app.core.exceptions import NotFoundException, ValidationException
 from app.di.providers import get_user_service
-from app.api.dependencies import (
-    get_current_active_admin,
-    get_current_user,
-    get_self_or_admin,
-)
+from app.api.dependencies import get_current_user
+from app.api.permissions import get_current_active_admin, get_self_or_admin
 from app.user.domain import User
 from app.user.schemas import (
     Token,

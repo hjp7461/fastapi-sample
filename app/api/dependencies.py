@@ -58,20 +58,6 @@ async def get_current_user(
     return user
 
 
-async def get_current_active_admin(
-        current_user: User = Depends(get_current_user),
-) -> User:
-    """
-    현재 인증된 사용자가 관리자인지 확인합니다.
-    """
-    if not current_user.is_admin():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions"
-        )
-    return current_user
-
-
 async def get_optional_current_user(
         request: Request,
         user_service: UserService = Depends(get_user_service),
@@ -108,23 +94,3 @@ async def get_optional_current_user(
     return user
 
 
-async def get_self_or_admin(
-        user_id: int,
-        current_user: User = Depends(get_current_user),
-) -> User:
-    """본인 또는 관리자만 통과하는 권한 가드.
-
-    `user_id` 는 라우터의 path parameter 와 같은 이름으로 FastAPI 가 자동 주입.
-
-    - 본인 (`current_user.id == user_id`) → 통과
-    - 관리자 (`current_user.is_admin()`) → 통과
-    - 그 외 → 403 Forbidden
-
-    권한 검사는 자원의 존재 확인보다 먼저 평가되어 ID 열거 공격을 차단한다.
-    """
-    if current_user.id != user_id and not current_user.is_admin():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions",
-        )
-    return current_user
