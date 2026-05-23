@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./app.db")
     DB_ECHO: bool = os.getenv("DB_ECHO", "false").lower() == "true"
 
+    # 응답 PII 정책 — UserAdminView (관리자→타인 조회) 의 email 마스킹.
+    # 기본 True (운영 안전). 개발 환경에서 `false` 명시 시 raw 노출.
+    USER_ADMIN_EMAIL_MASKING: bool = (
+        os.getenv("USER_ADMIN_EMAIL_MASKING", "true").lower() == "true"
+    )
+
     # CORS 설정
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",  # React 앱
