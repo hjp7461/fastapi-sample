@@ -3,7 +3,7 @@
 """
 
 import os
-from typing import List
+from typing import List, Optional
 
 from dotenv import load_dotenv
 from pydantic import field_validator
@@ -42,6 +42,14 @@ class Settings(BaseSettings):
         os.getenv("USER_ADMIN_EMAIL_MASKING", "true").lower() == "true"
     )
 
+    # 로깅 설정 — loguru sink/포맷 (app/core/logging.py::setup_logging 가 사용).
+    # default 는 기존 동작 호환 (stderr / INFO / text / file 비활성).
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    LOG_FORMAT: str = os.getenv("LOG_FORMAT", "text")
+    LOG_FILE: Optional[str] = os.getenv("LOG_FILE") or None
+    LOG_FILE_ROTATION: str = os.getenv("LOG_FILE_ROTATION", "10 MB")
+    LOG_FILE_RETENTION: str = os.getenv("LOG_FILE_RETENTION", "7 days")
+
     # CORS 설정
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",  # React 앱
@@ -55,6 +63,26 @@ class Settings(BaseSettings):
         if not (4 <= v <= 31):
             raise ValueError(f"BCRYPT_ROUNDS must be between 4 and 31, got {v}")
         return v
+
+    @field_validator("LOG_LEVEL")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        """loguru 가 인식하는 표준 레벨만 허용."""
+        allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        upper = v.upper()
+        if upper not in allowed:
+            raise ValueError(f"LOG_LEVEL must be one of {sorted(allowed)}, got {v!r}")
+        return upper
+
+    @field_validator("LOG_FORMAT")
+    @classmethod
+    def validate_log_format(cls, v: str) -> str:
+        """text (개발/사람) vs json (운영/수집 파이프라인)."""
+        allowed = {"text", "json"}
+        lower = v.lower()
+        if lower not in allowed:
+            raise ValueError(f"LOG_FORMAT must be one of {sorted(allowed)}, got {v!r}")
+        return lower
 
     model_config = {"env_file": ".env", "case_sensitive": True}
 
