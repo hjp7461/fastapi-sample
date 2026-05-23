@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.dependencies import get_current_user
-from app.api.permissions import get_current_active_admin, get_self_or_admin
+from app.api.permissions import require_admin, require_self_or_admin
 from app.core.exceptions import NotFoundException, ValidationException
 from app.di.providers import get_user_service
 from app.user.domain import User
@@ -87,7 +87,7 @@ async def login_for_access_token(
 @router.get("/{user_id}", response_model=Union[UserResponse, UserAdminView])
 async def get_user_by_id(
     user_id: int,
-    current_user: User = Depends(get_self_or_admin),
+    current_user: User = Depends(require_self_or_admin),
     user_service: UserService = Depends(get_user_service),
 ) -> Any:
     """특정 사용자 정보를 조회합니다. 본인 또는 관리자만 접근 가능.
@@ -109,7 +109,7 @@ async def get_user_by_id(
 async def list_users(
     skip: int = 0,
     limit: int = 100,
-    _: Any = Depends(get_current_active_admin),
+    _: Any = Depends(require_admin),
     user_service: UserService = Depends(get_user_service),
 ) -> Any:
     """사용자 목록을 조회합니다. 관리자 전용.

@@ -158,6 +158,35 @@ async def admin_user(db_session):
 
 
 @pytest_asyncio.fixture
+async def staff_user(db_session):
+    from app.core.security import get_password_hash
+
+    user_data = {
+        "username": "staffuser",
+        "email": "staff@example.com",
+        "password": "staffpassword",
+        "role": UserRole.STAFF.value,
+    }
+    db_user = UserModel(
+        username=user_data["username"],
+        email=user_data["email"],
+        hashed_password=get_password_hash(user_data["password"]),
+        is_active=True,
+        role=UserRole.STAFF,
+    )
+    db_session.add(db_user)
+    await db_session.commit()
+    await db_session.refresh(db_user)
+
+    return {
+        "id": db_user.id,
+        "username": user_data["username"],
+        "email": user_data["email"],
+        "password": user_data["password"],
+    }
+
+
+@pytest_asyncio.fixture
 async def auth_headers(client, test_user):
     login_data = {"username": test_user["email"], "password": test_user["password"]}
     response = await client.post("/api/v1/users/token", data=login_data)
@@ -168,6 +197,14 @@ async def auth_headers(client, test_user):
 @pytest_asyncio.fixture
 async def admin_auth_headers(client, admin_user):
     login_data = {"username": admin_user["email"], "password": admin_user["password"]}
+    response = await client.post("/api/v1/users/token", data=login_data)
+    token = response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture
+async def staff_auth_headers(client, staff_user):
+    login_data = {"username": staff_user["email"], "password": staff_user["password"]}
     response = await client.post("/api/v1/users/token", data=login_data)
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
