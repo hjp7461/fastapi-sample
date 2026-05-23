@@ -21,21 +21,21 @@ def _user_with(role: UserRole) -> User:
     )
 
 
-def test_user_is_admin():
+def test_user_is_admin() -> None:
     """is_admin 은 ADMIN 만 True."""
     assert _user_with(UserRole.ADMIN).is_admin() is True
     assert _user_with(UserRole.STAFF).is_admin() is False
     assert _user_with(UserRole.CUSTOMER).is_admin() is False
 
 
-def test_user_is_staff_or_above():
+def test_user_is_staff_or_above() -> None:
     """is_staff_or_above 는 ADMIN, STAFF 둘 다 True (계층 의도: STAFF ⊂ ADMIN)."""
     assert _user_with(UserRole.ADMIN).is_staff_or_above() is True
     assert _user_with(UserRole.STAFF).is_staff_or_above() is True
     assert _user_with(UserRole.CUSTOMER).is_staff_or_above() is False
 
 
-def test_can_manage_products_delegates_to_staff_or_above():
+def test_can_manage_products_delegates_to_staff_or_above() -> None:
     """can_manage_products 는 is_staff_or_above 와 동일한 결과를 반환 (위임)."""
     for role in UserRole:
         user = _user_with(role)

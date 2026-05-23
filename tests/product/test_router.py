@@ -17,7 +17,7 @@ from app.user.domain import UserRole
 
 # tests/product/test_router.py 수정 예시
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
-async def test_get_product(client, test_product):
+async def test_get_product(client: AsyncClient, test_product: Dict[str, Any]) -> None:
     """상품 조회 테스트."""
     # 1. 관리자 사용자 생성
     admin_data = {
@@ -95,7 +95,7 @@ async def test_get_product(client, test_product):
 
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
-async def test_list_products(client: AsyncClient, test_product: Dict[str, Any]):
+async def test_list_products(client: AsyncClient, test_product: Dict[str, Any]) -> None:
     """상품 목록 조회 테스트."""
     response = await client.get("/api/v1/products/")
 
@@ -110,7 +110,7 @@ async def test_list_products(client: AsyncClient, test_product: Dict[str, Any]):
 
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
-async def test_create_product_unauthorized(client: AsyncClient):
+async def test_create_product_unauthorized(client: AsyncClient) -> None:
     """인증되지 않은 사용자의 상품 생성 시도 테스트."""
     product_data = {
         "name": "New Product",
@@ -129,7 +129,7 @@ async def test_create_product_unauthorized(client: AsyncClient):
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_create_product_as_regular_user(
     client: AsyncClient, auth_headers: Dict[str, str]
-):
+) -> None:
     """일반 사용자의 상품 생성 시도 테스트."""
     product_data = {
         "name": "New Product",
@@ -150,9 +150,9 @@ async def test_create_product_as_regular_user(
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_create_product_as_admin(
     client: AsyncClient, admin_auth_headers: Dict[str, str]
-):
+) -> None:
     """관리자의 상품 생성 테스트."""
-    product_data = {
+    product_data: Dict[str, Any] = {
         "name": "Admin's Product",
         "description": "Product created by admin",
         "price": "299.99",
@@ -178,7 +178,7 @@ async def test_update_product_as_admin(
     client: AsyncClient,
     admin_auth_headers: Dict[str, str],
     test_product: Dict[str, Any],
-):
+) -> None:
     """관리자의 상품 업데이트 테스트."""
     product_id = test_product["id"]
     update_data = {
@@ -204,7 +204,7 @@ async def test_update_inventory_as_admin(
     client: AsyncClient,
     admin_auth_headers: Dict[str, str],
     test_product: Dict[str, Any],
-):
+) -> None:
     """관리자의 상품 재고 업데이트 테스트."""
     product_id = test_product["id"]
     inventory_update = {
@@ -235,7 +235,7 @@ async def test_update_inventory_exact_zero(
     client: AsyncClient,
     admin_auth_headers: Dict[str, str],
     test_product: Dict[str, Any],
-):
+) -> None:
     """quantity_change 가 현재 재고와 정확히 일치 → 200 + inventory=0."""
     # test_product fixture: inventory=10
     product_id = test_product["id"]
@@ -254,7 +254,7 @@ async def test_update_inventory_insufficient(
     client: AsyncClient,
     admin_auth_headers: Dict[str, str],
     test_product: Dict[str, Any],
-):
+) -> None:
     """현재 재고보다 1 많이 차감 시도 → 400 + 재고는 그대로."""
     # test_product fixture: inventory=10
     product_id = test_product["id"]
@@ -281,7 +281,7 @@ async def test_update_inventory_concurrent_deduction(
     client: AsyncClient,
     admin_auth_headers: Dict[str, str],
     test_product: Dict[str, Any],
-):
+) -> None:
     """동시 차감 2건 (-10, -10) 시 정확히 1건만 200, 1건은 400.
 
     StaticPool 단일 커넥션 환경이라 실제 OS 레벨 race 재현은 어렵지만,
@@ -319,7 +319,7 @@ async def test_delete_product_as_admin(
     client: AsyncClient,
     admin_auth_headers: Dict[str, str],
     test_product: Dict[str, Any],
-):
+) -> None:
     """관리자의 상품 삭제 테스트."""
     product_id = test_product["id"]
 
@@ -337,7 +337,7 @@ async def test_delete_product_as_admin(
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_filter_products_by_category(
     client: AsyncClient, test_product: Dict[str, Any]
-):
+) -> None:
     """카테고리별 상품 필터링 테스트."""
     # 테스트 상품의 카테고리 확인
     product_response = await client.get(f"/api/v1/products/{test_product['id']}")
@@ -357,7 +357,7 @@ async def test_filter_products_by_category(
 
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
-async def test_filter_products_by_active_status(client: AsyncClient):
+async def test_filter_products_by_active_status(client: AsyncClient) -> None:
     """활성 상태별 상품 필터링 테스트."""
     # 활성 상품만 필터링
     response = await client.get("/api/v1/products/?is_active=true")
@@ -379,7 +379,7 @@ async def test_filter_products_by_active_status(client: AsyncClient):
 async def test_get_product_anonymous_returns_public_view(
     client: AsyncClient,
     test_product: Dict[str, Any],
-):
+) -> None:
     """인증 없는 조회 → ProductPublicView (inventory 없음)."""
     response = await client.get(f"/api/v1/products/{test_product['id']}")
 
@@ -395,7 +395,7 @@ async def test_get_product_as_customer_returns_public_view(
     client: AsyncClient,
     auth_headers: Dict[str, str],
     test_product: Dict[str, Any],
-):
+) -> None:
     """일반 사용자 조회 → ProductPublicView (inventory 없음)."""
     response = await client.get(
         f"/api/v1/products/{test_product['id']}", headers=auth_headers
@@ -412,7 +412,7 @@ async def test_get_product_as_admin_returns_full(
     client: AsyncClient,
     admin_auth_headers: Dict[str, str],
     test_product: Dict[str, Any],
-):
+) -> None:
     """관리자 조회 → ProductResponse (inventory 포함)."""
     response = await client.get(
         f"/api/v1/products/{test_product['id']}", headers=admin_auth_headers
@@ -429,7 +429,7 @@ async def test_get_product_as_admin_returns_full(
 async def test_list_products_anonymous_excludes_inventory(
     client: AsyncClient,
     test_product: Dict[str, Any],
-):
+) -> None:
     """인증 없는 목록 → 모든 항목 inventory 없음."""
     response = await client.get("/api/v1/products/")
 
@@ -446,7 +446,7 @@ async def test_list_products_as_admin_includes_inventory(
     client: AsyncClient,
     admin_auth_headers: Dict[str, str],
     test_product: Dict[str, Any],
-):
+) -> None:
     """관리자 목록 → 모든 항목 inventory 포함."""
     response = await client.get("/api/v1/products/", headers=admin_auth_headers)
 
@@ -469,7 +469,7 @@ async def test_list_products_as_admin_includes_inventory(
 @pytest.mark.asyncio
 async def test_create_product_as_staff(
     client: AsyncClient, staff_auth_headers: Dict[str, str]
-):
+) -> None:
     """staff 의 상품 생성 통과 (201)."""
     product_data = {
         "name": "Staff Product",
@@ -493,7 +493,7 @@ async def test_update_product_as_staff(
     client: AsyncClient,
     staff_auth_headers: Dict[str, str],
     test_product: Dict[str, Any],
-):
+) -> None:
     """staff 의 상품 업데이트 통과 (200)."""
     product_id = test_product["id"]
     update_data = {"name": "Staff Updated Name"}
@@ -511,7 +511,7 @@ async def test_update_inventory_as_staff(
     client: AsyncClient,
     staff_auth_headers: Dict[str, str],
     test_product: Dict[str, Any],
-):
+) -> None:
     """staff 의 재고 변경 통과 (200) — 일상 운영 시나리오의 핵심 경로."""
     product_id = test_product["id"]
 
@@ -530,7 +530,7 @@ async def test_delete_product_as_staff(
     client: AsyncClient,
     staff_auth_headers: Dict[str, str],
     test_product: Dict[str, Any],
-):
+) -> None:
     """staff 의 상품 삭제 통과 (204)."""
     product_id = test_product["id"]
 
@@ -546,7 +546,7 @@ async def test_update_product_as_regular_user_forbidden(
     client: AsyncClient,
     auth_headers: Dict[str, str],
     test_product: Dict[str, Any],
-):
+) -> None:
     """customer 의 상품 업데이트 거부 (403)."""
     response = await client.put(
         f"/api/v1/products/{test_product['id']}",
@@ -562,7 +562,7 @@ async def test_update_inventory_as_regular_user_forbidden(
     client: AsyncClient,
     auth_headers: Dict[str, str],
     test_product: Dict[str, Any],
-):
+) -> None:
     """customer 의 재고 변경 거부 (403)."""
     response = await client.patch(
         f"/api/v1/products/{test_product['id']}/inventory",
@@ -578,7 +578,7 @@ async def test_delete_product_as_regular_user_forbidden(
     client: AsyncClient,
     auth_headers: Dict[str, str],
     test_product: Dict[str, Any],
-):
+) -> None:
     """customer 의 상품 삭제 거부 (403)."""
     response = await client.delete(
         f"/api/v1/products/{test_product['id']}",
@@ -591,7 +591,7 @@ async def test_delete_product_as_regular_user_forbidden(
 @pytest.mark.asyncio
 async def test_update_product_anonymous_unauthenticated(
     client: AsyncClient, test_product: Dict[str, Any]
-):
+) -> None:
     """토큰 없는 변경 요청은 401 (가드 진입 전 인증 단계에서 차단).
 
     `test_create_product_unauthorized` 의 PUT 버전 — 변경 동작 전반의

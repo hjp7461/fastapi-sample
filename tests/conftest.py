@@ -5,12 +5,20 @@
 - 비동기 경로(`async`)는 그대로 유지
 """
 
+from collections.abc import AsyncIterator
+from typing import Any
+
 import pytest
 import pytest_asyncio
 from dependency_injector import providers
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
@@ -24,7 +32,7 @@ TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
 
 @pytest_asyncio.fixture
-async def engine():
+async def engine() -> AsyncIterator[AsyncEngine]:
     """단일 커넥션 인메모리 SQLite. StaticPool로 다중 세션이 동일 DB를 공유."""
     test_engine = create_async_engine(
         TEST_DB_URL,
@@ -46,19 +54,19 @@ async def engine():
 
 
 @pytest.fixture
-def session_factory(engine):
+def session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     """테스트 엔진에 바인딩된 AsyncSession 팩토리."""
-    return sessionmaker(
+    return async_sessionmaker(
         bind=engine,
-        class_=AsyncSession,
         expire_on_commit=False,
-        autocommit=False,
         autoflush=False,
     )
 
 
 @pytest_asyncio.fixture(autouse=True)
-async def container_override(engine, session_factory):
+async def container_override(
+    engine: AsyncEngine, session_factory: async_sessionmaker[AsyncSession]
+) -> AsyncIterator[None]:
     """Container.engine / session_factory를 테스트용으로 교체.
 
     teardown에서 scoped_session 정리 + override 원복.
@@ -81,19 +89,21 @@ async def container_override(engine, session_factory):
 
 
 @pytest_asyncio.fixture
-async def db_session(session_factory):
+async def db_session(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> AsyncIterator[AsyncSession]:
     """시드 데이터 작성용 세션."""
     async with session_factory() as session:
         yield session
 
 
 @pytest.fixture
-def app():
+def app() -> FastAPI:
     return fastapi_app
 
 
 @pytest_asyncio.fixture
-async def client(app):
+async def client(app: FastAPI) -> AsyncIterator[AsyncClient]:
     """ASGI 트랜스포트로 직접 라우팅되는 비동기 HTTP 클라이언트."""
     app.dependency_overrides = {}
     transport = ASGITransport(app=app)
@@ -102,7 +112,7 @@ async def client(app):
 
 
 @pytest_asyncio.fixture
-async def test_user(db_session):
+async def test_user(db_session: AsyncSession) -> dict[str, Any]:
     from app.core.security import get_password_hash
 
     user_data = {
@@ -129,7 +139,7 @@ async def test_user(db_session):
 
 
 @pytest_asyncio.fixture
-async def admin_user(db_session):
+async def admin_user(db_session: AsyncSession) -> dict[str, Any]:
     from app.core.security import get_password_hash
 
     user_data = {
@@ -158,7 +168,7 @@ async def admin_user(db_session):
 
 
 @pytest_asyncio.fixture
-async def staff_user(db_session):
+async def staff_user(db_session: AsyncSession) -> dict[str, Any]:
     from app.core.security import get_password_hash
 
     user_data = {
@@ -187,7 +197,9 @@ async def staff_user(db_session):
 
 
 @pytest_asyncio.fixture
-async def auth_headers(client, test_user):
+async def auth_headers(
+    client: AsyncClient, test_user: dict[str, Any]
+) -> dict[str, str]:
     login_data = {"username": test_user["email"], "password": test_user["password"]}
     response = await client.post("/api/v1/users/token", data=login_data)
     token = response.json()["access_token"]
@@ -195,7 +207,9 @@ async def auth_headers(client, test_user):
 
 
 @pytest_asyncio.fixture
-async def admin_auth_headers(client, admin_user):
+async def admin_auth_headers(
+    client: AsyncClient, admin_user: dict[str, Any]
+) -> dict[str, str]:
     login_data = {"username": admin_user["email"], "password": admin_user["password"]}
     response = await client.post("/api/v1/users/token", data=login_data)
     token = response.json()["access_token"]
@@ -203,7 +217,9 @@ async def admin_auth_headers(client, admin_user):
 
 
 @pytest_asyncio.fixture
-async def staff_auth_headers(client, staff_user):
+async def staff_auth_headers(
+    client: AsyncClient, staff_user: dict[str, Any]
+) -> dict[str, str]:
     login_data = {"username": staff_user["email"], "password": staff_user["password"]}
     response = await client.post("/api/v1/users/token", data=login_data)
     token = response.json()["access_token"]
@@ -211,7 +227,7 @@ async def staff_auth_headers(client, staff_user):
 
 
 @pytest_asyncio.fixture
-async def test_product(db_session):
+async def test_product(db_session: AsyncSession) -> dict[str, Any]:
     from decimal import Decimal
 
     product_data = {

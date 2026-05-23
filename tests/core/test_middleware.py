@@ -11,6 +11,7 @@
 import json
 import logging
 import re
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
 import pytest_asyncio
@@ -49,7 +50,7 @@ def _raise_handler() -> None:
 
 
 @pytest.fixture(autouse=True, scope="module")
-def _probe_routes():
+def _probe_routes() -> Iterator[None]:
     """테스트용 임시 라우트 2개를 등록 + 모듈 종료 시 제거.
 
     `app.router.routes` 에 직접 추가 — fastapi 의 `add_api_route` 는 OpenAPI 까지
@@ -71,7 +72,7 @@ def _probe_routes():
 
 
 @pytest_asyncio.fixture
-async def client():
+async def client() -> AsyncIterator[AsyncClient]:
     """ASGI 트랜스포트 — 라이프스팬 우회 (단위 테스트 격리)."""
     app.dependency_overrides = {}
     transport = ASGITransport(app=app)
@@ -80,7 +81,7 @@ async def client():
 
 
 @pytest.fixture(autouse=True)
-def restore_logger():
+def restore_logger() -> Iterator[None]:
     """각 테스트 후 logger sink 상태를 default 로 복원."""
     yield
     logger.remove()
@@ -93,7 +94,7 @@ def restore_logger():
 
 
 @pytest.mark.asyncio
-async def test_request_id_generated_when_header_missing(client: AsyncClient):
+async def test_request_id_generated_when_header_missing(client: AsyncClient) -> None:
     """헤더 없이 요청 → 응답 X-Request-ID 가 uuid4 hex 형식 (32자)."""
     response = await client.get("/__test_request_id")
 
@@ -104,7 +105,7 @@ async def test_request_id_generated_when_header_missing(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_request_id_propagates_from_incoming_header(client: AsyncClient):
+async def test_request_id_propagates_from_incoming_header(client: AsyncClient) -> None:
     """incoming X-Request-ID 가 있으면 그대로 수용 → 응답 동일."""
     custom_id = "my-trace-12345"
     response = await client.get(
@@ -116,7 +117,7 @@ async def test_request_id_propagates_from_incoming_header(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_request_id_accessible_via_contextvar(client: AsyncClient):
+async def test_request_id_accessible_via_contextvar(client: AsyncClient) -> None:
     """요청 처리 중 get_request_id() → 응답 헤더와 일치."""
     custom_id = "ctxvar-trace-678"
     response = await client.get(
@@ -130,7 +131,7 @@ async def test_request_id_accessible_via_contextvar(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_request_id_resets_between_requests(client: AsyncClient):
+async def test_request_id_resets_between_requests(client: AsyncClient) -> None:
     """연속 요청 2건의 ID 가 서로 다름 — contextvar leakage 방지."""
     r1 = await client.get("/__test_request_id")
     r2 = await client.get("/__test_request_id")
@@ -146,7 +147,9 @@ async def test_request_id_resets_between_requests(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_request_id_in_text_log(client: AsyncClient, capfd):
+async def test_request_id_in_text_log(
+    client: AsyncClient, capfd: pytest.CaptureFixture[str]
+) -> None:
     """요청 처리 중 logger.info() → text 로그에 request_id 포함."""
     setup_logging()
     custom_id = "log-text-trace-99"
@@ -163,7 +166,11 @@ async def test_request_id_in_text_log(client: AsyncClient, capfd):
 
 
 @pytest.mark.asyncio
-async def test_request_id_in_json_log(client: AsyncClient, capfd, monkeypatch):
+async def test_request_id_in_json_log(
+    client: AsyncClient,
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """LOG_FORMAT=json 시 record.extra.request_id 가 JSON 출력에 포함."""
     monkeypatch.setattr(settings, "LOG_FORMAT", "json")
     setup_logging()
@@ -194,7 +201,7 @@ async def test_request_id_in_json_log(client: AsyncClient, capfd, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_request_id_accepts_max_length(client: AsyncClient):
+async def test_request_id_accepts_max_length(client: AsyncClient) -> None:
     """정확히 128자 길이의 URL-safe 헤더는 통과 (boundary)."""
     custom_id = "a" * MAX_LENGTH
     response = await client.get(
@@ -206,7 +213,7 @@ async def test_request_id_accepts_max_length(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_request_id_rejects_oversized_header(client: AsyncClient):
+async def test_request_id_rejects_oversized_header(client: AsyncClient) -> None:
     """129자 (max + 1) 헤더 → 새 uuid hex (silent fallback)."""
     oversized = "a" * (MAX_LENGTH + 1)
     response = await client.get(
@@ -223,7 +230,7 @@ async def test_request_id_rejects_oversized_header(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_request_id_rejects_invalid_charset(client: AsyncClient):
+async def test_request_id_rejects_invalid_charset(client: AsyncClient) -> None:
     """charset 위반 (공백 포함) → 새 uuid hex (silent fallback)."""
     bad_id = "bad id with space"
     response = await client.get("/__test_request_id", headers={"X-Request-ID": bad_id})
@@ -235,7 +242,7 @@ async def test_request_id_rejects_invalid_charset(client: AsyncClient):
     assert request_id != bad_id
 
 
-def test_validate_helper_rejects_control_unicode_and_special():
+def test_validate_helper_rejects_control_unicode_and_special() -> None:
     """헬퍼 단위: 제어 문자 / 비ASCII / 콜론 / 빈 값 모두 None.
 
     httpx 클라이언트가 raw 제어 문자/비ASCII 헤더를 거부할 수 있어 미들웨어
@@ -256,7 +263,9 @@ def test_validate_helper_rejects_control_unicode_and_special():
 
 
 @pytest.mark.asyncio
-async def test_request_id_warns_on_rejection(client: AsyncClient, capfd):
+async def test_request_id_warns_on_rejection(
+    client: AsyncClient, capfd: pytest.CaptureFixture[str]
+) -> None:
     """검증 실패 시 warn 로그에 사유 + 원본 prefix + 새 ID 포함."""
     setup_logging()
     bad_id = "bad id with space"
@@ -279,7 +288,9 @@ ACCESS_LOG_PATTERN = re.compile(r'"GET /__test_request_id HTTP/\S+" 200 \d+\.\d+
 
 
 @pytest.mark.asyncio
-async def test_access_log_contains_request_id(client: AsyncClient, capfd):
+async def test_access_log_contains_request_id(
+    client: AsyncClient, capfd: pytest.CaptureFixture[str]
+) -> None:
     """정상 요청 → access log 라인에 응답 헤더와 동일 request_id 포함."""
     setup_logging()
     custom_id = "access-log-trace-aaa"
@@ -302,7 +313,9 @@ async def test_access_log_contains_request_id(client: AsyncClient, capfd):
 
 
 @pytest.mark.asyncio
-async def test_access_log_format(client: AsyncClient, capfd):
+async def test_access_log_format(
+    client: AsyncClient, capfd: pytest.CaptureFixture[str]
+) -> None:
     """access log 형식 매칭 (uvicorn 호환 + elapsed_ms 양수)."""
     setup_logging()
     await client.get("/__test_request_id")
@@ -318,7 +331,7 @@ async def test_access_log_format(client: AsyncClient, capfd):
     assert float(match.group(1)) >= 0.0
 
 
-def test_uvicorn_access_logger_disabled():
+def test_uvicorn_access_logger_disabled() -> None:
     """setup_logging() 후 uvicorn.access 비활성화 (handlers=[] + propagate=False)."""
     setup_logging()
     access_logger = logging.getLogger("uvicorn.access")
@@ -334,7 +347,9 @@ def test_uvicorn_access_logger_disabled():
 
 
 @pytest.mark.asyncio
-async def test_access_log_emitted_on_route_exception(client: AsyncClient, capfd):
+async def test_access_log_emitted_on_route_exception(
+    client: AsyncClient, capfd: pytest.CaptureFixture[str]
+) -> None:
     """라우트 핸들러가 raise 해도 access log 한 줄 출력 + status=500.
 
     httpx ASGITransport + starlette BaseHTTPMiddleware 조합에서 라우트 예외는

@@ -22,7 +22,7 @@ def _make_alembic_config(url: str) -> Config:
     return cfg
 
 
-def test_alembic_upgrade_creates_expected_tables(tmp_path: Path):
+def test_alembic_upgrade_creates_expected_tables(tmp_path: Path) -> None:
     """`alembic upgrade head` 후 users/products/alembic_version 테이블 생성."""
     db_path = tmp_path / "alembic_upgrade.db"
     async_url = f"sqlite+aiosqlite:///{db_path}"
@@ -40,7 +40,7 @@ def test_alembic_upgrade_creates_expected_tables(tmp_path: Path):
     assert "alembic_version" in tables
 
 
-def test_alembic_downgrade_removes_tables(tmp_path: Path):
+def test_alembic_downgrade_removes_tables(tmp_path: Path) -> None:
     """`alembic downgrade base` 후 users/products 테이블 제거.
 
     alembic_version 메타 테이블은 alembic 표준상 남을 수 있으므로 검증하지 않는다.

@@ -24,14 +24,14 @@ repos:
       - id: check-yaml
       - id: check-merge-conflict
 
-  # mypy 는 import 추적이 필요해 pass_filenames=false 로 app/ 전체 검사.
+  # mypy 는 import 추적이 필요해 pass_filenames=false 로 app/ tests/ 전체 검사.
   # local + language: system + uv run 패턴으로 venv 의 mypy 직접 사용
   # (additional_dependencies 격리 venv 불필요, mypy 캐시 활용).
   - repo: local
     hooks:
       - id: mypy
         name: mypy
-        entry: uv run mypy app/
+        entry: uv run mypy app/ tests/
         language: system
         pass_filenames: false
         types: [python]

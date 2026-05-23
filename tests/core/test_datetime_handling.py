@@ -11,11 +11,12 @@ import asyncio
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.user.models import UserModel
 
 
-def test_default_factory_returns_timezone_aware():
+def test_default_factory_returns_timezone_aware() -> None:
     """모델 인스턴스화 시점에 default_factory 가 timezone-aware UTC 를 반환한다.
 
     DB 왕복 전 단계 검증 — Python 단에서 datetime.utcnow() deprecation 이
@@ -35,7 +36,7 @@ def test_default_factory_returns_timezone_aware():
 
 
 @pytest.mark.asyncio
-async def test_user_updated_at_changes_on_update(db_session):
+async def test_user_updated_at_changes_on_update(db_session: AsyncSession) -> None:
     """UserModel.updated_at 이 UPDATE 시점에 자동 갱신된다.
 
     SQLite 환경에서는 DB 왕복 시 tzinfo 가 유실되므로 본 테스트는 값 자체의
