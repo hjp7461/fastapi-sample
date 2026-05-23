@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: lint + type + test + alembic
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv (with cache)
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python (mise .mise.toml 일치)
+        run: uv python install 3.12
+
+      - name: Install dependencies (frozen lockfile)
+        run: uv sync --all-extras --frozen
+
+      - name: Cache pre-commit hooks
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Cache mypy
+        uses: actions/cache@v4
+        with:
+          path: .mypy_cache
+          key: mypy-${{ runner.os }}-${{ hashFiles('uv.lock', 'pyproject.toml') }}
+          restore-keys: mypy-${{ runner.os }}-
+
+      - name: pre-commit (ruff + 위생 hooks + mypy app/ tests/)
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+
+      - name: pytest
+        run: uv run pytest -q
+
+      - name: alembic upgrade head + downgrade base (SQLite smoke)
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///./_ci.db
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+          rm -f _ci.db
