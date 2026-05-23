@@ -1,11 +1,13 @@
 """
 애플리케이션 설정.
 """
+
 import os
-from typing import List, Optional
+from typing import List
+
+from dotenv import load_dotenv
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
-from dotenv import load_dotenv
 
 # .env 파일 로드
 load_dotenv()
@@ -16,6 +18,7 @@ class Settings(BaseSettings):
     애플리케이션 설정 클래스.
     환경 변수에서 값을 로드합니다.
     """
+
     # 기본 설정
     PROJECT_NAME: str = "FastAPI Clean Architecture"
     PROJECT_DESCRIPTION: str = "FastAPI 클린 아키텍처 예제 애플리케이션"
@@ -44,15 +47,10 @@ class Settings(BaseSettings):
     def validate_bcrypt_rounds(cls, v: int) -> int:
         """bcrypt 표준 범위 검증 (4 ≤ rounds ≤ 31)."""
         if not (4 <= v <= 31):
-            raise ValueError(
-                f"BCRYPT_ROUNDS must be between 4 and 31, got {v}"
-            )
+            raise ValueError(f"BCRYPT_ROUNDS must be between 4 and 31, got {v}")
         return v
 
-    model_config = {
-        "env_file": ".env",
-        "case_sensitive": True
-    }
+    model_config = {"env_file": ".env", "case_sensitive": True}
 
 
 # 설정 인스턴스 생성

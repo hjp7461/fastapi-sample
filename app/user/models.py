@@ -2,10 +2,11 @@
 사용자 관련 SQLAlchemy/SQLModel 모델 정의.
 데이터베이스 스키마를 표현합니다.
 """
+
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Column, String, Boolean, DateTime, Integer, Enum
+from sqlalchemy import Boolean, Column, DateTime, Enum, String
 from sqlmodel import Field, SQLModel
 
 from app.core.datetime import utcnow_aware
@@ -16,6 +17,7 @@ class UserModel(SQLModel, table=True):
     """
     사용자 테이블 모델.
     """
+
     __tablename__ = "users"
 
     id: Optional[int] = Field(default=None, primary_key=True)

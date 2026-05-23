@@ -2,11 +2,13 @@
 사용자 데이터 액세스 레이어.
 데이터베이스와의 상호작용을 담당합니다.
 """
-from typing import List, Optional, Type
-from sqlalchemy import select, update, delete
+
+from typing import List, Optional
+
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.user.domain import User, UserRole
+from app.user.domain import User
 from app.user.models import UserModel
 
 
@@ -27,7 +29,7 @@ class UserRepository:
             first_name=user.first_name,
             last_name=user.last_name,
             role=user.role,
-            is_active=user.is_active
+            is_active=user.is_active,
         )
         self.session.add(db_user)
         await self.session.commit()
@@ -70,9 +72,7 @@ class UserRepository:
         # 데이터가 있으면 업데이트 실행
         if update_data:
             await self.session.execute(
-                update(UserModel)
-                .where(UserModel.id == user_id)
-                .values(**update_data)
+                update(UserModel).where(UserModel.id == user_id).values(**update_data)
             )
             await self.session.commit()
 
@@ -94,11 +94,7 @@ class UserRepository:
 
     async def list(self, skip: int = 0, limit: int = 100) -> List[User]:
         """사용자 목록을 조회합니다."""
-        result = await self.session.execute(
-            select(UserModel)
-            .offset(skip)
-            .limit(limit)
-        )
+        result = await self.session.execute(select(UserModel).offset(skip).limit(limit))
         return [self._to_domain(user) for user in result.scalars().all()]
 
     def _to_domain(self, db_user: UserModel) -> User:
@@ -113,5 +109,5 @@ class UserRepository:
             role=db_user.role,
             is_active=db_user.is_active,
             created_at=db_user.created_at,
-            updated_at=db_user.updated_at
+            updated_at=db_user.updated_at,
         )

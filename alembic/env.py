@@ -4,6 +4,7 @@ target_metadata 는 SQLModel.metadata 를 사용한다. 모델 import 가 SQLMod
 metadata 에 테이블을 등록하는 사이드 이펙트를 가지므로, 명시적으로 두 모델
 모듈을 import 한다 (linter F401 무시).
 """
+
 import asyncio
 from logging.config import fileConfig
 
@@ -13,7 +14,6 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlmodel import SQLModel
 
 from alembic import context
-
 from app.core.config import settings
 from app.product import models as _product_models  # noqa: F401 — 메타데이터 등록
 from app.user import models as _user_models  # noqa: F401 — 메타데이터 등록

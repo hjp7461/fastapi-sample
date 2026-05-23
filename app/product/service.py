@@ -2,10 +2,13 @@
 상품 서비스 구현.
 비즈니스 로직과 유즈케이스를 포함합니다.
 """
-from typing import List, Optional, Dict, Any, Union
-from decimal import Decimal
 
-from app.core.exceptions import NotFoundException, ValidationException, BusinessLogicException
+from typing import Any, Dict, List, Optional
+
+from app.core.exceptions import (
+    BusinessLogicException,
+    NotFoundException,
+)
 from app.product.domain import Product, ProductCategory
 from app.product.repository import (
     InventoryUpdateOutcome,
@@ -29,7 +32,7 @@ class ProductService:
             price=product_data["price"],
             category=product_data.get("category", ProductCategory.OTHER),
             inventory=product_data.get("inventory", 0),
-            is_active=product_data.get("is_active", True)
+            is_active=product_data.get("is_active", True),
         )
 
         return await self.product_repository.create(product)
@@ -41,7 +44,9 @@ class ProductService:
             raise NotFoundException(f"Product with ID {product_id} not found")
         return product
 
-    async def update_product(self, product_id: int, product_data: Dict[str, Any]) -> Product:
+    async def update_product(
+        self, product_id: int, product_data: Dict[str, Any]
+    ) -> Product:
         """상품 정보를 업데이트합니다."""
         product = await self.product_repository.update(product_id, product_data)
         if not product:
@@ -59,18 +64,15 @@ class ProductService:
         return await self.product_repository.delete(product_id)
 
     async def list_products(
-            self,
-            skip: int = 0,
-            limit: int = 100,
-            category: Optional[ProductCategory] = None,
-            is_active: Optional[bool] = None
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        category: Optional[ProductCategory] = None,
+        is_active: Optional[bool] = None,
     ) -> List[Product]:
         """상품 목록을 조회합니다."""
         return await self.product_repository.list(
-            skip=skip,
-            limit=limit,
-            category=category,
-            is_active=is_active
+            skip=skip, limit=limit, category=category, is_active=is_active
         )
 
     async def update_inventory(self, product_id: int, quantity_change: int) -> Product:
@@ -89,9 +91,7 @@ class ProductService:
                 assert result.product is not None
                 return result.product
             case InventoryUpdateOutcome.NOT_FOUND:
-                raise NotFoundException(
-                    f"Product with ID {product_id} not found"
-                )
+                raise NotFoundException(f"Product with ID {product_id} not found")
             case InventoryUpdateOutcome.INSUFFICIENT:
                 raise BusinessLogicException(
                     f"Not enough inventory for product {product_id}"

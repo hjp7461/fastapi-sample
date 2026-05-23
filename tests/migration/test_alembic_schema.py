@@ -4,11 +4,13 @@
 tmp_path SQLite 파일을 생성해 `alembic upgrade head` / `alembic downgrade base`
 를 직접 호출하여 생성/제거 동작이 깨지지 않는지 확인한다.
 """
+
 from pathlib import Path
+
+from sqlalchemy import create_engine, inspect
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect
 
 ROOT = Path(__file__).resolve().parents[2]
 

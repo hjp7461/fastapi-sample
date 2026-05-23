@@ -1,4 +1,5 @@
 """`mask_email` 단위 테스트."""
+
 from app.user.masking import mask_email
 
 

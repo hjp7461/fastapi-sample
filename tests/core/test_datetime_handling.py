@@ -6,6 +6,7 @@ PostgreSQL 등 DateTime(timezone=True) 를 네이티브 지원하는 DB 로 이�
 aware 가 보존된다. 본 테스트는 Python 단 (default_factory 호출 결과) 에서의
 timezone-aware 동작과, DB 왕복 후의 datetime 정합성 (값 자체) 을 검증한다.
 """
+
 import asyncio
 from datetime import UTC, datetime
 

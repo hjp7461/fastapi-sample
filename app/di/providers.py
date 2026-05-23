@@ -10,6 +10,7 @@ FastAPI `Depends(...)` 와 직접 호환되지 않음 (Provide marker 가 callab
 유지하는 named helper 패턴을 채택. 자세한 사유는
 `docs/[PRD]DI_와이어링_lambda_청소.md` §2.1 참조.
 """
+
 from app.di.containers import Container
 from app.product.service import ProductService
 from app.user.service import UserService

@@ -3,13 +3,15 @@
 """
 애플리케이션 진입점.
 """
+
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.router import api_router
 from app.core.config import settings
 from app.di.containers import Container
-from app.api.router import api_router
 
 # 의존성 주입 컨테이너 초기화
 container = Container()
@@ -65,5 +67,5 @@ async def root():
     return {
         "message": f"Welcome to {settings.PROJECT_NAME} API",
         "version": settings.VERSION,
-        "docs": f"{settings.API_V1_STR}/docs"
+        "docs": f"{settings.API_V1_STR}/docs",
     }

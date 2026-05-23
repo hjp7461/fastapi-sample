@@ -2,13 +2,14 @@
 상품 API 엔드포인트 테스트.
 pytest==8.3.5, pytest-asyncio==0.26.0 버전에 맞게 작성되었습니다.
 """
+
+from decimal import Decimal
+from typing import Any, Dict
+
 import pytest
 from httpx import AsyncClient
-from typing import Dict, Any
-from decimal import Decimal
 
 from app.user.domain import UserRole
-
 
 # pytest 8.3.5에서는 이제 Test 클래스 대신 함수에 직접 마커를 적용합니다
 # pytestmark = pytest.mark.asyncio  # 불필요
@@ -27,31 +28,24 @@ async def test_get_product(client, test_product):
         "first_name": "Admin",
         "last_name": "User",
         "role": UserRole.ADMIN.value,  # 관리자 역할 지정
-        "is_active": True
+        "is_active": True,
     }
 
     # 사용자 등록 API 호출
-    register_response = await client.post(
-        "/api/v1/users/",
-        json=admin_data
-    )
+    register_response = await client.post("/api/v1/users/", json=admin_data)
 
     # 사용자 등록 확인
     if register_response.status_code != 201:
         print(f"Admin registration failed: {register_response.text}")
     assert register_response.status_code == 201
-    admin_user = register_response.json()
 
     # 2. 관리자 로그인을 통해 토큰 얻기
-    login_data = {
-        "username": admin_data["email"],
-        "password": admin_data["password"]
-    }
+    login_data = {"username": admin_data["email"], "password": admin_data["password"]}
 
     # 폼 데이터로 변경하여 로그인 요청
     login_response = await client.post(
         "/api/v1/users/token",
-        data=login_data  # JSON이 아닌 폼 데이터로 전송
+        data=login_data,  # JSON이 아닌 폼 데이터로 전송
     )
 
     # 로그인 응답 확인
@@ -62,7 +56,9 @@ async def test_get_product(client, test_product):
     print(f"Login response: {login_response.text}")
 
     # 토큰이 있는지 확인
-    assert "access_token" in token_data, f"access_token not found in response: {token_data}"
+    assert "access_token" in token_data, (
+        f"access_token not found in response: {token_data}"
+    )
 
     # 인증 헤더 생성
     admin_auth_headers = {"Authorization": f"Bearer {token_data['access_token']}"}
@@ -74,14 +70,12 @@ async def test_get_product(client, test_product):
         "price": "99.99",
         "category": "electronics",
         "inventory": 10,
-        "is_active": True
+        "is_active": True,
     }
 
     # 4. 관리자 권한으로 상품 등록
     create_response = await client.post(
-        "/api/v1/products/",
-        json=product_data,
-        headers=admin_auth_headers
+        "/api/v1/products/", json=product_data, headers=admin_auth_headers
     )
 
     # 응답 확인 (오류 시 자세한 정보 표시)
@@ -98,7 +92,6 @@ async def test_get_product(client, test_product):
 
     # 7. 응답 검증
     assert get_response.status_code == 200
-    product = get_response.json()
 
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
@@ -124,7 +117,7 @@ async def test_create_product_unauthorized(client: AsyncClient):
         "description": "New product description",
         "price": "199.99",
         "category": "electronics",
-        "inventory": 50
+        "inventory": 50,
     }
 
     response = await client.post("/api/v1/products/", json=product_data)
@@ -134,34 +127,42 @@ async def test_create_product_unauthorized(client: AsyncClient):
 
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
-async def test_create_product_as_regular_user(client: AsyncClient, auth_headers: Dict[str, str]):
+async def test_create_product_as_regular_user(
+    client: AsyncClient, auth_headers: Dict[str, str]
+):
     """일반 사용자의 상품 생성 시도 테스트."""
     product_data = {
         "name": "New Product",
         "description": "New product description",
         "price": "199.99",
         "category": "electronics",
-        "inventory": 50
+        "inventory": 50,
     }
 
-    response = await client.post("/api/v1/products/", json=product_data, headers=auth_headers)
+    response = await client.post(
+        "/api/v1/products/", json=product_data, headers=auth_headers
+    )
 
     # 일반 사용자는 상품 생성 권한이 없어야 함
     assert response.status_code == 403
 
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
-async def test_create_product_as_admin(client: AsyncClient, admin_auth_headers: Dict[str, str]):
+async def test_create_product_as_admin(
+    client: AsyncClient, admin_auth_headers: Dict[str, str]
+):
     """관리자의 상품 생성 테스트."""
     product_data = {
         "name": "Admin's Product",
         "description": "Product created by admin",
         "price": "299.99",
         "category": "electronics",
-        "inventory": 100
+        "inventory": 100,
     }
 
-    response = await client.post("/api/v1/products/", json=product_data, headers=admin_auth_headers)
+    response = await client.post(
+        "/api/v1/products/", json=product_data, headers=admin_auth_headers
+    )
 
     # 관리자는 상품 생성이 가능해야 함
     assert response.status_code == 201
@@ -174,22 +175,20 @@ async def test_create_product_as_admin(client: AsyncClient, admin_auth_headers: 
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_update_product_as_admin(
-        client: AsyncClient,
-        admin_auth_headers: Dict[str, str],
-        test_product: Dict[str, Any]
+    client: AsyncClient,
+    admin_auth_headers: Dict[str, str],
+    test_product: Dict[str, Any],
 ):
     """관리자의 상품 업데이트 테스트."""
     product_id = test_product["id"]
     update_data = {
         "name": "Updated Product",
         "description": "Updated product description",
-        "price": "149.99"
+        "price": "149.99",
     }
 
     response = await client.put(
-        f"/api/v1/products/{product_id}",
-        json=update_data,
-        headers=admin_auth_headers
+        f"/api/v1/products/{product_id}", json=update_data, headers=admin_auth_headers
     )
 
     assert response.status_code == 200
@@ -202,9 +201,9 @@ async def test_update_product_as_admin(
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_update_inventory_as_admin(
-        client: AsyncClient,
-        admin_auth_headers: Dict[str, str],
-        test_product: Dict[str, Any]
+    client: AsyncClient,
+    admin_auth_headers: Dict[str, str],
+    test_product: Dict[str, Any],
 ):
     """관리자의 상품 재고 업데이트 테스트."""
     product_id = test_product["id"]
@@ -222,7 +221,7 @@ async def test_update_inventory_as_admin(
     response = await client.patch(
         f"/api/v1/products/{product_id}/inventory",
         json=inventory_update,
-        headers=admin_auth_headers
+        headers=admin_auth_headers,
     )
 
     assert response.status_code == 200
@@ -233,9 +232,9 @@ async def test_update_inventory_as_admin(
 
 @pytest.mark.asyncio
 async def test_update_inventory_exact_zero(
-        client: AsyncClient,
-        admin_auth_headers: Dict[str, str],
-        test_product: Dict[str, Any],
+    client: AsyncClient,
+    admin_auth_headers: Dict[str, str],
+    test_product: Dict[str, Any],
 ):
     """quantity_change 가 현재 재고와 정확히 일치 → 200 + inventory=0."""
     # test_product fixture: inventory=10
@@ -252,9 +251,9 @@ async def test_update_inventory_exact_zero(
 
 @pytest.mark.asyncio
 async def test_update_inventory_insufficient(
-        client: AsyncClient,
-        admin_auth_headers: Dict[str, str],
-        test_product: Dict[str, Any],
+    client: AsyncClient,
+    admin_auth_headers: Dict[str, str],
+    test_product: Dict[str, Any],
 ):
     """현재 재고보다 1 많이 차감 시도 → 400 + 재고는 그대로."""
     # test_product fixture: inventory=10
@@ -279,9 +278,9 @@ async def test_update_inventory_insufficient(
 
 @pytest.mark.asyncio
 async def test_update_inventory_concurrent_deduction(
-        client: AsyncClient,
-        admin_auth_headers: Dict[str, str],
-        test_product: Dict[str, Any],
+    client: AsyncClient,
+    admin_auth_headers: Dict[str, str],
+    test_product: Dict[str, Any],
 ):
     """동시 차감 2건 (-10, -10) 시 정확히 1건만 200, 1건은 400.
 
@@ -317,16 +316,15 @@ async def test_update_inventory_concurrent_deduction(
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_delete_product_as_admin(
-        client: AsyncClient,
-        admin_auth_headers: Dict[str, str],
-        test_product: Dict[str, Any]
+    client: AsyncClient,
+    admin_auth_headers: Dict[str, str],
+    test_product: Dict[str, Any],
 ):
     """관리자의 상품 삭제 테스트."""
     product_id = test_product["id"]
 
     response = await client.delete(
-        f"/api/v1/products/{product_id}",
-        headers=admin_auth_headers
+        f"/api/v1/products/{product_id}", headers=admin_auth_headers
     )
 
     assert response.status_code == 204
@@ -337,7 +335,9 @@ async def test_delete_product_as_admin(
 
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
-async def test_filter_products_by_category(client: AsyncClient, test_product: Dict[str, Any]):
+async def test_filter_products_by_category(
+    client: AsyncClient, test_product: Dict[str, Any]
+):
     """카테고리별 상품 필터링 테스트."""
     # 테스트 상품의 카테고리 확인
     product_response = await client.get(f"/api/v1/products/{test_product['id']}")
@@ -354,6 +354,7 @@ async def test_filter_products_by_category(client: AsyncClient, test_product: Di
     # 모든 상품이 요청한 카테고리에 속하는지 확인
     for product in data:
         assert product["category"] == product_category
+
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_filter_products_by_active_status(client: AsyncClient):
@@ -376,8 +377,8 @@ async def test_filter_products_by_active_status(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_get_product_anonymous_returns_public_view(
-        client: AsyncClient,
-        test_product: Dict[str, Any],
+    client: AsyncClient,
+    test_product: Dict[str, Any],
 ):
     """인증 없는 조회 → ProductPublicView (inventory 없음)."""
     response = await client.get(f"/api/v1/products/{test_product['id']}")
@@ -391,9 +392,9 @@ async def test_get_product_anonymous_returns_public_view(
 
 @pytest.mark.asyncio
 async def test_get_product_as_customer_returns_public_view(
-        client: AsyncClient,
-        auth_headers: Dict[str, str],
-        test_product: Dict[str, Any],
+    client: AsyncClient,
+    auth_headers: Dict[str, str],
+    test_product: Dict[str, Any],
 ):
     """일반 사용자 조회 → ProductPublicView (inventory 없음)."""
     response = await client.get(
@@ -408,9 +409,9 @@ async def test_get_product_as_customer_returns_public_view(
 
 @pytest.mark.asyncio
 async def test_get_product_as_admin_returns_full(
-        client: AsyncClient,
-        admin_auth_headers: Dict[str, str],
-        test_product: Dict[str, Any],
+    client: AsyncClient,
+    admin_auth_headers: Dict[str, str],
+    test_product: Dict[str, Any],
 ):
     """관리자 조회 → ProductResponse (inventory 포함)."""
     response = await client.get(
@@ -426,8 +427,8 @@ async def test_get_product_as_admin_returns_full(
 
 @pytest.mark.asyncio
 async def test_list_products_anonymous_excludes_inventory(
-        client: AsyncClient,
-        test_product: Dict[str, Any],
+    client: AsyncClient,
+    test_product: Dict[str, Any],
 ):
     """인증 없는 목록 → 모든 항목 inventory 없음."""
     response = await client.get("/api/v1/products/")
@@ -442,14 +443,12 @@ async def test_list_products_anonymous_excludes_inventory(
 
 @pytest.mark.asyncio
 async def test_list_products_as_admin_includes_inventory(
-        client: AsyncClient,
-        admin_auth_headers: Dict[str, str],
-        test_product: Dict[str, Any],
+    client: AsyncClient,
+    admin_auth_headers: Dict[str, str],
+    test_product: Dict[str, Any],
 ):
     """관리자 목록 → 모든 항목 inventory 포함."""
-    response = await client.get(
-        "/api/v1/products/", headers=admin_auth_headers
-    )
+    response = await client.get("/api/v1/products/", headers=admin_auth_headers)
 
     assert response.status_code == 200
     items = response.json()

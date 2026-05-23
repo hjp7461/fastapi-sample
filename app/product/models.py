@@ -2,11 +2,12 @@
 상품 관련 SQLAlchemy/SQLModel 모델 정의.
 데이터베이스 스키마를 표현합니다.
 """
-from datetime import datetime
-from typing import Optional
-from decimal import Decimal
 
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Enum, Numeric
+from datetime import datetime
+from decimal import Decimal
+from typing import Optional
+
+from sqlalchemy import Boolean, Column, DateTime, Enum, Integer, Numeric, String
 from sqlmodel import Field, SQLModel
 
 from app.core.datetime import utcnow_aware
@@ -17,6 +18,7 @@ class ProductModel(SQLModel, table=True):
     """
     상품 테이블 모델.
     """
+
     __tablename__ = "products"
 
     id: Optional[int] = Field(default=None, primary_key=True)

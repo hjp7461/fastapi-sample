@@ -2,19 +2,20 @@
 사용자 서비스 구현.
 비즈니스 로직과 유즈케이스를 포함합니다.
 """
-from typing import List, Optional, Dict, Any, Union
+
 from datetime import timedelta
+from typing import Any, Dict, List, Optional, Union
 
 from loguru import logger
 
+from app.core.config import settings
+from app.core.exceptions import NotFoundException, ValidationException
 from app.core.security import (
     _extract_bcrypt_rounds,
     create_access_token,
     get_password_hash,
     verify_password,
 )
-from app.core.config import settings
-from app.core.exceptions import NotFoundException, ValidationException
 from app.user.domain import User, UserRole
 from app.user.repository import UserRepository
 
@@ -55,12 +56,17 @@ class UserService:
                 # 재해시 실패는 인증 자체를 막지 않는다.
                 logger.exception(
                     "rehash failed (user_id={}, stored={}, configured={})",
-                    user.id, stored_rounds, configured,
+                    user.id,
+                    stored_rounds,
+                    configured,
                 )
         elif stored_rounds is not None and stored_rounds > configured:
             logger.warning(
-                "rehash skipped: downgrade detected (user_id={}, stored={}, configured={})",
-                user.id, stored_rounds, configured,
+                "rehash skipped: downgrade detected "
+                "(user_id={}, stored={}, configured={})",
+                user.id,
+                stored_rounds,
+                configured,
             )
 
         return user
@@ -83,7 +89,7 @@ class UserService:
             first_name=user_data.get("first_name"),
             last_name=user_data.get("last_name"),
             role=user_data.get("role", UserRole.CUSTOMER),
-            is_active=user_data.get("is_active", True)
+            is_active=user_data.get("is_active", True),
         )
 
         # 저장 및 반환
@@ -123,7 +129,7 @@ class UserService:
         return await self.user_repository.list(skip, limit)
 
     def create_access_token_for_user(
-            self, user: Union[User, int], expires_delta: Optional[timedelta] = None
+        self, user: Union[User, int], expires_delta: Optional[timedelta] = None
     ) -> str:
         """사용자를 위한 액세스 토큰을 생성합니다."""
         user_id = user.id if isinstance(user, User) else user
@@ -131,7 +137,4 @@ class UserService:
         if not expires_delta:
             expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 
-        return create_access_token(
-            subject=user_id,
-            expires_delta=expires_delta
-        )
+        return create_access_token(subject=user_id, expires_delta=expires_delta)

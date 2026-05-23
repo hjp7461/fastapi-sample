@@ -3,6 +3,7 @@
 PR #14 후속으로 도입한 enum 결과 패턴이 세 outcome (OK / NOT_FOUND / INSUFFICIENT)
 을 정확히 표현하는지 검증한다. 라우터 통합 테스트와 별개의 layer 회귀 가드.
 """
+
 from decimal import Decimal
 
 import pytest
@@ -19,14 +20,16 @@ from app.product.repository import (
 async def test_update_inventory_returns_ok_on_success(db_session):
     """정상 갱신: outcome.OK + product 반영."""
     repo = ProductRepository(db_session)
-    product = await repo.create(Product(
-        name="P1",
-        description=None,
-        price=Decimal("10.00"),
-        category=ProductCategory.OTHER,
-        inventory=10,
-        is_active=True,
-    ))
+    product = await repo.create(
+        Product(
+            name="P1",
+            description=None,
+            price=Decimal("10.00"),
+            category=ProductCategory.OTHER,
+            inventory=10,
+            is_active=True,
+        )
+    )
 
     result = await repo.update_inventory(product.id, -3)
 
@@ -51,14 +54,16 @@ async def test_update_inventory_returns_not_found_for_missing_id(db_session):
 async def test_update_inventory_returns_insufficient_when_negative(db_session):
     """음수 발생: outcome.INSUFFICIENT + 재고 보존."""
     repo = ProductRepository(db_session)
-    product = await repo.create(Product(
-        name="P2",
-        description=None,
-        price=Decimal("5.00"),
-        category=ProductCategory.OTHER,
-        inventory=2,
-        is_active=True,
-    ))
+    product = await repo.create(
+        Product(
+            name="P2",
+            description=None,
+            price=Decimal("5.00"),
+            category=ProductCategory.OTHER,
+            inventory=2,
+            is_active=True,
+        )
+    )
 
     result = await repo.update_inventory(product.id, -10)
 

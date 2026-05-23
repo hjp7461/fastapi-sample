@@ -2,10 +2,11 @@
 사용자 도메인 엔티티 및 값 객체 정의.
 핵심 비즈니스 로직과 규칙을 포함합니다.
 """
+
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List
+from typing import Optional
 
 
 class UserRole(str, Enum):
@@ -17,6 +18,7 @@ class UserRole(str, Enum):
 @dataclass
 class User:
     """사용자 도메인 엔티티."""
+
     id: Optional[int] = None
     email: str = ""
     username: str = ""
