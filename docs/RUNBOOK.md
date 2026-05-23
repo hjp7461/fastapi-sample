@@ -187,12 +187,86 @@ uv run alembic upgrade head
 
 ---
 
-## 9. 참고 문서 / 링크
+## 9. 권한 매트릭스
+
+운영자/온콜이 "STAFF 와 ADMIN 의 차이가 정확히 무엇인가" 를 한 곳에서 확인하는 진실원.
+권한 정책의 코드 진실원은 `app/user/domain.py` (도메인 메서드) + `app/api/permissions.py` (가드) + `app/{user,product}/router.py` (라우터 매핑) 이며, 본 § 은 그 매트릭스를 압축한다.
+
+### 9.1 역할 계층
+
+```
+CUSTOMER ⊂ STAFF ⊂ ADMIN
+```
+
+- `CUSTOMER`: 기본 사용자 (회원가입 직후).
+- `STAFF`: 일선 현장 운영자 — 상품/재고 관리 가능, 사용자 관리는 불가.
+- `ADMIN`: 모든 권한.
+
+도메인 메서드 (`app/user/domain.py`):
+
+| 메서드 | 의미 | True 인 역할 |
+| --- | --- | --- |
+| `is_admin()` | ADMIN 전용 여부 | ADMIN |
+| `is_staff_or_above()` | STAFF 이상 여부 | STAFF, ADMIN |
+| `can_manage_products()` | 상품 관리 권한 (= `is_staff_or_above`) | STAFF, ADMIN |
+
+### 9.2 권한 가드 (`app/api/permissions.py`)
+
+| 가드 | 통과 조건 | 실패 | 호출하는 도메인 메서드 |
+| --- | --- | --- | --- |
+| `require_admin` | ADMIN | 403 | `is_admin()` |
+| `require_self_or_admin` | 본인 (`id == user_id`) ∨ ADMIN | 403 | `is_admin()` |
+| `require_staff_or_admin` | STAFF 이상 | 403 | `can_manage_products()` |
+
+> 인증 단계 (`get_current_user`) 가 먼저 실행되어 401 (토큰 없음/만료) / 400 (비활성 사용자) 을 반환한 뒤 가드가 평가된다. 가드는 권한 부족 시 403 만 책임.
+
+### 9.3 엔드포인트 × 역할 매트릭스
+
+| 엔드포인트 | anonymous | CUSTOMER | STAFF | ADMIN | 가드 |
+| --- | --- | --- | --- | --- | --- |
+| `POST /users/` (회원가입) | 201 | 201 | 201 | 201 | (없음) |
+| `POST /users/token` (로그인) | 200/401 | — | — | — | (없음) |
+| `GET /users/me` | 401 | 200 | 200 | 200 | `get_current_user` |
+| `PUT /users/me` | 401 | 200 | 200 | 200 | `get_current_user` |
+| `GET /users/{id}` (본인) | 401 | 200 | 200 | 200 | `require_self_or_admin` |
+| `GET /users/{id}` (타인) | 401 | 403 | 403 | 200 | `require_self_or_admin` |
+| `GET /users/` | 401 | 403 | 403 | 200 | `require_admin` |
+| `GET /products/{id}` | 200 (Public) | 200 (Public) | 200 (Full) | 200 (Full) | (없음, 응답 분기) |
+| `GET /products/` | 200 (Public) | 200 (Public) | 200 (Full) | 200 (Full) | (없음, 응답 분기) |
+| `POST /products/` | 401 | 403 | 201 | 201 | `require_staff_or_admin` |
+| `PUT /products/{id}` | 401 | 403 | 200 | 200 | `require_staff_or_admin` |
+| `DELETE /products/{id}` | 401 | 403 | 204 | 204 | `require_staff_or_admin` |
+| `PATCH /products/{id}/inventory` | 401 | 403 | 200 | 200 | `require_staff_or_admin` |
+
+> "Public" = `ProductPublicView` (inventory 제외), "Full" = `ProductResponse` (inventory 포함). 응답 분기 진실원은 `app/product/router.py` 의 `get_product_by_id` / `list_products`.
+> ADMIN 의 타인 조회는 응답이 `UserAdminView` 로 마스킹된다 — `USER_ADMIN_EMAIL_MASKING` 토글은 §2 참조.
+
+### 9.4 정책 결정 (B-2 변형)
+
+- **product 변경 4개 (POST/PUT/DELETE/PATCH-inventory)** 는 STAFF + ADMIN 모두 허용.
+- **사용자 관리 (`GET /users/`, `GET /users/{id}` 타인)** 는 ADMIN 전용.
+- 의도: **도메인 경계 = product (현장 운영) vs user (관리)**. STAFF 는 현장 운영자, ADMIN 은 인사/계정 관리 책임자.
+- 원천 PR: #19 (조회 컨텍스트 분리), #26 (변경 권한 확장 + `require_*` 명명 통일 + dead code 해소).
+
+### 9.5 정책 변경 시 갱신 순서
+
+권한 정책을 바꿀 때는 항상 다음 순서로 갱신한다 (진실원 → 표면, drift 방지):
+
+1. **도메인 메서드** (`app/user/domain.py`) — `is_*` / `can_*` 추가 또는 의미 변경.
+2. **권한 가드** (`app/api/permissions.py`) — 도메인 메서드를 호출하는 가드 추가/조정 + 매트릭스 docstring 동기화.
+3. **라우터** (`app/{user,product}/router.py`) — `Depends(가드)` 교체.
+4. **회귀 테스트** — 역할 × 엔드포인트 매트릭스를 통합 테스트로 가드 (`tests/{user,product}/test_router.py` 의 `as_admin` / `as_staff` / `as_regular_user` 패턴).
+5. **본 RUNBOOK §9** — §9.1~§9.4 표 동기화. 정책 결정 의도가 새로 추가되면 §9.4 에 한 문장 명시.
+
+---
+
+## 10. 참고 문서 / 링크
 
 - 마이그레이션 도입 배경: `docs/[PRD]Alembic_첫_마이그레이션.md`
 - 운영 핵심 정책 후속:
   - bcrypt 라운드: `docs/[PRD]bcrypt_라운드_환경별_설정.md`, `docs/[PRD]라운드_다운그레이드_차단.md`
   - PII 마스킹: `docs/[PRD]UserResponse_PII_마스킹.md`
+  - 권한 매트릭스 (본 §9): `docs/[PRD]RUNBOOK_권한_매트릭스_단락.md` (도입 배경) + `docs/[PRD]staff_권한_정책_및_가드_명명_정리.md` (PR #26 정책 결정)
 - 세션 이어가기: `docs/[HANDOFF]세션_이어가기.md` (로컬 전용)
 - Alembic 공식: https://alembic.sqlalchemy.org
 - SQLAlchemy async: https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html
