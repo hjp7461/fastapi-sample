@@ -383,6 +383,38 @@ async def test_access_admin_endpoint_as_admin(
 
 
 @pytest.mark.asyncio
+async def test_access_admin_endpoint_as_staff_forbidden(
+    client: AsyncClient, staff_auth_headers: Dict[str, str]
+):
+    """staff 가 GET /users/ 접근 시 거부 (403).
+
+    staff 권한 정책 회귀 가드 — staff 는 product 변경은 가능하지만
+    사용자 관리 (목록 조회 포함) 는 admin 전용으로 유지된다.
+    """
+    response = await client.get("/api/v1/users/", headers=staff_auth_headers)
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_other_user_as_staff_is_forbidden(
+    client: AsyncClient,
+    staff_auth_headers: Dict[str, str],
+    admin_user: Dict[str, Any],
+):
+    """staff 가 다른 사용자 (admin_user) 조회 시 거부 (403).
+
+    `require_self_or_admin` 회귀 가드 — staff 는 본인 외 조회에 admin 권한이
+    없으므로 통과 불가. 사용자 PII 노출 면적이 admin only 로 유지됨을 보장.
+    """
+    response = await client.get(
+        f"/api/v1/users/{admin_user['id']}", headers=staff_auth_headers
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_get_self_returns_full_user_response(
     client: AsyncClient,
     auth_headers: Dict[str, str],

@@ -456,3 +456,149 @@ async def test_list_products_as_admin_includes_inventory(
     assert len(items) > 0
     for item in items:
         assert "inventory" in item
+
+
+# ---------------------------------------------------------------------------
+# staff 권한 회귀 가드 (PRD: staff 권한 정책 확장)
+#
+# 정책: STAFF 사용자는 product 변경 4개 (POST/PUT/DELETE/PATCH-inventory) 통과.
+# customer (regular_user) 는 변경 4개 모두 403.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_product_as_staff(
+    client: AsyncClient, staff_auth_headers: Dict[str, str]
+):
+    """staff 의 상품 생성 통과 (201)."""
+    product_data = {
+        "name": "Staff Product",
+        "description": "Product created by staff",
+        "price": "49.99",
+        "category": "electronics",
+        "inventory": 20,
+    }
+
+    response = await client.post(
+        "/api/v1/products/", json=product_data, headers=staff_auth_headers
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"] == product_data["name"]
+
+
+@pytest.mark.asyncio
+async def test_update_product_as_staff(
+    client: AsyncClient,
+    staff_auth_headers: Dict[str, str],
+    test_product: Dict[str, Any],
+):
+    """staff 의 상품 업데이트 통과 (200)."""
+    product_id = test_product["id"]
+    update_data = {"name": "Staff Updated Name"}
+
+    response = await client.put(
+        f"/api/v1/products/{product_id}", json=update_data, headers=staff_auth_headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == update_data["name"]
+
+
+@pytest.mark.asyncio
+async def test_update_inventory_as_staff(
+    client: AsyncClient,
+    staff_auth_headers: Dict[str, str],
+    test_product: Dict[str, Any],
+):
+    """staff 의 재고 변경 통과 (200) — 일상 운영 시나리오의 핵심 경로."""
+    product_id = test_product["id"]
+
+    response = await client.patch(
+        f"/api/v1/products/{product_id}/inventory",
+        headers=staff_auth_headers,
+        json={"quantity_change": 3},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["inventory"] == test_product.get("inventory", 10) + 3
+
+
+@pytest.mark.asyncio
+async def test_delete_product_as_staff(
+    client: AsyncClient,
+    staff_auth_headers: Dict[str, str],
+    test_product: Dict[str, Any],
+):
+    """staff 의 상품 삭제 통과 (204)."""
+    product_id = test_product["id"]
+
+    response = await client.delete(
+        f"/api/v1/products/{product_id}", headers=staff_auth_headers
+    )
+
+    assert response.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_update_product_as_regular_user_forbidden(
+    client: AsyncClient,
+    auth_headers: Dict[str, str],
+    test_product: Dict[str, Any],
+):
+    """customer 의 상품 업데이트 거부 (403)."""
+    response = await client.put(
+        f"/api/v1/products/{test_product['id']}",
+        json={"name": "Hacked"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_update_inventory_as_regular_user_forbidden(
+    client: AsyncClient,
+    auth_headers: Dict[str, str],
+    test_product: Dict[str, Any],
+):
+    """customer 의 재고 변경 거부 (403)."""
+    response = await client.patch(
+        f"/api/v1/products/{test_product['id']}/inventory",
+        json={"quantity_change": -1},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delete_product_as_regular_user_forbidden(
+    client: AsyncClient,
+    auth_headers: Dict[str, str],
+    test_product: Dict[str, Any],
+):
+    """customer 의 상품 삭제 거부 (403)."""
+    response = await client.delete(
+        f"/api/v1/products/{test_product['id']}",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_update_product_anonymous_unauthenticated(
+    client: AsyncClient, test_product: Dict[str, Any]
+):
+    """토큰 없는 변경 요청은 401 (가드 진입 전 인증 단계에서 차단).
+
+    `test_create_product_unauthorized` 의 PUT 버전 — 변경 동작 전반의
+    인증 회귀 가드를 명시.
+    """
+    response = await client.put(
+        f"/api/v1/products/{test_product['id']}", json={"name": "Anon"}
+    )
+
+    assert response.status_code == 401
