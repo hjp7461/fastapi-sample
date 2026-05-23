@@ -85,10 +85,19 @@ check_untyped_defs = true
 disallow_untyped_decorators = true
 no_implicit_reexport = true
 strict_optional = true
+# pythonpath=["."] + app/ 패키지 구조에서 발생하는 모듈명 중복 해결.
+explicit_package_bases = true
+namespace_packages = true
 
 [[tool.mypy.overrides]]
 module = ["sqlalchemy.*", "sqlmodel.*", "alembic.*", "dependency_injector.*", "jose.*", "loguru.*"]
 ignore_missing_imports = true
+
+# sqlmodel/sqlalchemy stub 한계 — repository 의 select().where(Model.f == v)
+# 비교가 bool 로 추론되어 arg-type 위반 다수. 코드는 정확. stub 개선 시 제거.
+[[tool.mypy.overrides]]
+module = ["app.user.repository", "app.product.repository"]
+disable_error_code = ["arg-type"]
 
 [tool.pytest.ini_options]
 addopts = [

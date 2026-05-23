@@ -4,6 +4,7 @@
 애플리케이션 진입점.
 """
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -23,7 +24,7 @@ container = Container()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     애플리케이션 라이프사이클 이벤트 처리를 위한 lifespan 컨텍스트 매니저.
 
@@ -65,15 +66,15 @@ app.add_middleware(
 app.add_middleware(AccessLogMiddleware)
 app.add_middleware(RequestIDMiddleware)
 
-# 컨테이너 설정
-app.container = container
+# 컨테이너 설정 — FastAPI 공식 패턴 (app.state).
+app.state.container = container
 
 # API 라우터 포함
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
 @app.get("/")
-async def root():
+async def root() -> dict[str, str]:
     """
     루트 엔드포인트.
     """

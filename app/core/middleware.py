@@ -9,7 +9,7 @@ import time
 import uuid
 
 from loguru import logger
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp
@@ -49,7 +49,9 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         raw = request.headers.get(HEADER_NAME)
         validated = _validate_incoming_id(raw)
         request_id = validated or uuid.uuid4().hex
@@ -91,7 +93,9 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         start = time.perf_counter()
         # call_next 가 raise 시 finally 에서 사용될 fallback. 사용자 exception
         # handler 가 다른 status 로 변환할 수도 있지만, "예외 발생" 시그널은 500.

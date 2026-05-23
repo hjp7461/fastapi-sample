@@ -37,7 +37,9 @@ class UserService:
         - stored == configured 또는 파싱 실패: 무처리.
         """
         user = await self.user_repository.get_by_email(email)
-        if not user:
+        # 인증 흐름은 DB 에서 가져온 user 의 id / hashed_password 가 항상 있다고
+        # 가정. 도메인 모델이 Optional 로 선언되어 있어 mypy narrow 명시.
+        if not user or not user.hashed_password or user.id is None:
             return None
         if not verify_password(password, user.hashed_password):
             return None

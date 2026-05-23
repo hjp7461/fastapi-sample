@@ -3,12 +3,12 @@
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, cast
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, ValidationInfo, field_validator
 
 from app.core.config import settings
-from app.user.domain import UserRole
+from app.user.domain import User, UserRole
 from app.user.masking import mask_email
 
 
@@ -30,7 +30,8 @@ class UserCreate(UserBase):
     password_confirm: str
 
     @field_validator("password_confirm")
-    def passwords_match(cls, v, info):
+    @classmethod
+    def passwords_match(cls, v: str, info: ValidationInfo) -> str:
         if "password" in info.data and v != info.data["password"]:
             raise ValueError("비밀번호가 일치하지 않습니다")
         return v
@@ -95,32 +96,38 @@ class UserSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
-def build_admin_view(user) -> UserAdminView:
+def build_admin_view(user: User) -> UserAdminView:
     """도메인 User 를 관리자용 응답으로 변환.
 
     email 마스킹은 `settings.USER_ADMIN_EMAIL_MASKING` 에 따라 결정.
     기본 True (마스킹 ON, 운영 안전). False 명시 시 raw email.
+
+    DB 에서 가져온 user 의 id/created_at/updated_at 은 항상 not None 이지만
+    도메인 모델이 Optional 로 선언 — builder 호출 시점에서 cast.
     """
     email = mask_email(user.email) if settings.USER_ADMIN_EMAIL_MASKING else user.email
     return UserAdminView(
-        id=user.id,
+        id=cast(int, user.id),
         username=user.username,
         email=email,
         role=user.role,
         is_active=user.is_active,
-        created_at=user.created_at,
-        updated_at=user.updated_at,
+        created_at=cast(datetime, user.created_at),
+        updated_at=cast(datetime, user.updated_at),
     )
 
 
-def build_summary(user) -> UserSummary:
-    """도메인 User 를 요약 응답으로 변환 (PII 0건)."""
+def build_summary(user: User) -> UserSummary:
+    """도메인 User 를 요약 응답으로 변환 (PII 0건).
+
+    DB 에서 가져온 user 는 id/created_at not None — cast 로 builder 시점 narrow.
+    """
     return UserSummary(
-        id=user.id,
+        id=cast(int, user.id),
         username=user.username,
         role=user.role,
         is_active=user.is_active,
-        created_at=user.created_at,
+        created_at=cast(datetime, user.created_at),
     )
 
 
