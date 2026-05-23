@@ -1,12 +1,15 @@
-"""`RequestIDMiddleware` + loguru patcher 회귀 가드.
+"""`RequestIDMiddleware` + `AccessLogMiddleware` + loguru patcher 회귀 가드.
 
 - 헤더 없는 요청 → 응답 X-Request-ID 가 uuid hex (32자) 자동 생성
 - incoming X-Request-ID → 응답 동일
 - 요청 처리 중 get_request_id() 가 헤더 값과 일치 (contextvar 동작)
 - text/json 로그에 request_id 자동 첨부 (loguru patcher)
+- incoming 헤더 hardening (length/charset 검증)
+- access log 가 request_id + elapsed_ms 포함 + uvicorn.access 비활성화
 """
 
 import json
+import logging
 import re
 
 import pytest
@@ -260,3 +263,61 @@ async def test_request_id_warns_on_rejection(client: AsyncClient, capfd):
         f"warn 로그 누락. 실제 stderr:\n{captured.err}"
     )
     assert bad_id in captured.err  # 원본 prefix (50자 이내)
+
+
+# ---------------------------------------------------------------------------
+# AccessLogMiddleware (PR #34)
+# ---------------------------------------------------------------------------
+
+
+ACCESS_LOG_PATTERN = re.compile(r'"GET /__test_request_id HTTP/\S+" 200 \d+\.\d+ms')
+
+
+@pytest.mark.asyncio
+async def test_access_log_contains_request_id(client: AsyncClient, capfd):
+    """정상 요청 → access log 라인에 응답 헤더와 동일 request_id 포함."""
+    setup_logging()
+    custom_id = "access-log-trace-aaa"
+    response = await client.get(
+        "/__test_request_id", headers={"X-Request-ID": custom_id}
+    )
+
+    assert response.status_code == 200
+    assert response.headers.get("X-Request-ID") == custom_id
+
+    captured = capfd.readouterr()
+    access_lines = [
+        line for line in captured.err.splitlines() if ACCESS_LOG_PATTERN.search(line)
+    ]
+    assert access_lines, f"access log 라인 미발견. 실제 stderr:\n{captured.err}"
+    # text format 의 request_id 컬럼 ({extra[request_id]}) 에 custom_id 노출
+    assert custom_id in access_lines[-1], (
+        f"access log 의 request_id 누락. 실제 라인:\n{access_lines[-1]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_access_log_format(client: AsyncClient, capfd):
+    """access log 형식 매칭 (uvicorn 호환 + elapsed_ms 양수)."""
+    setup_logging()
+    await client.get("/__test_request_id")
+
+    captured = capfd.readouterr()
+    access_lines = [
+        line for line in captured.err.splitlines() if ACCESS_LOG_PATTERN.search(line)
+    ]
+    assert access_lines, f"access log format 매칭 실패. 실제 stderr:\n{captured.err}"
+    # elapsed_ms 가 양수 float 인지 확인
+    match = re.search(r"(\d+\.\d+)ms", access_lines[-1])
+    assert match is not None
+    assert float(match.group(1)) >= 0.0
+
+
+def test_uvicorn_access_logger_disabled():
+    """setup_logging() 후 uvicorn.access 비활성화 (handlers=[] + propagate=False)."""
+    setup_logging()
+    access_logger = logging.getLogger("uvicorn.access")
+    assert access_logger.handlers == [], (
+        f"uvicorn.access 의 handlers 비어있어야 함. 실제: {access_logger.handlers!r}"
+    )
+    assert access_logger.propagate is False

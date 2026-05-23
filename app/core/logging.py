@@ -97,5 +97,10 @@ def setup_logging() -> None:
 
     # stdlib logging → loguru
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
-    for noisy in ("uvicorn", "uvicorn.access", "sqlalchemy.engine"):
+    for noisy in ("uvicorn", "sqlalchemy.engine"):
         logging.getLogger(noisy).handlers = [InterceptHandler()]
+
+    # uvicorn.access 는 AccessLogMiddleware 가 대체 — 중복 출력 차단.
+    uvicorn_access = logging.getLogger("uvicorn.access")
+    uvicorn_access.handlers = []
+    uvicorn_access.propagate = False
