@@ -312,3 +312,7 @@ cython_debug/
 .june/
 app.db
 /reports/
+
+# 로컬 전용 작업 문서 (PRD / PLAN / HANDOFF / diagram / RUNBOOK)
+# 기존엔 .git/info/exclude 만 사용했으나, 협업 시 정책이 명확하게 보이도록 .gitignore 로 승격.
+docs/
