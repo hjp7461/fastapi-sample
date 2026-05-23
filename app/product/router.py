@@ -8,11 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 
 from app.core.exceptions import NotFoundException, ValidationException, BusinessLogicException
 from app.di.providers import get_product_service
-from app.api.dependencies import (
-    get_current_active_admin,
-    get_current_user,
-    get_optional_current_user,
-)
+from app.api.dependencies import get_current_user, get_optional_current_user
+from app.api.permissions import get_current_active_admin
 from app.product.schemas import (
     ProductCreate,
     ProductInventoryUpdate,
