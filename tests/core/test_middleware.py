@@ -18,6 +18,7 @@ from loguru import logger
 from app.core.config import settings
 from app.core.context import get_request_id
 from app.core.logging import setup_logging
+from app.core.middleware import MAX_LENGTH, _validate_incoming_id
 from app.main import app
 
 HEX_32 = re.compile(r"^[0-9a-f]{32}$")
@@ -177,3 +178,85 @@ async def test_request_id_in_json_log(client: AsyncClient, capfd, monkeypatch):
     data = json.loads(probe_lines[-1])
     assert data["record"]["message"] == "probe-from-request"
     assert data["record"]["extra"]["request_id"] == custom_id
+
+
+# ---------------------------------------------------------------------------
+# incoming 헤더 hardening (PR #33)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_request_id_accepts_max_length(client: AsyncClient):
+    """정확히 128자 길이의 URL-safe 헤더는 통과 (boundary)."""
+    custom_id = "a" * MAX_LENGTH
+    response = await client.get(
+        "/__test_request_id", headers={"X-Request-ID": custom_id}
+    )
+
+    assert response.status_code == 200
+    assert response.headers.get("X-Request-ID") == custom_id
+
+
+@pytest.mark.asyncio
+async def test_request_id_rejects_oversized_header(client: AsyncClient):
+    """129자 (max + 1) 헤더 → 새 uuid hex (silent fallback)."""
+    oversized = "a" * (MAX_LENGTH + 1)
+    response = await client.get(
+        "/__test_request_id", headers={"X-Request-ID": oversized}
+    )
+
+    assert response.status_code == 200
+    request_id = response.headers.get("X-Request-ID")
+    assert request_id is not None
+    assert HEX_32.match(request_id), (
+        f"oversized 헤더 거부 후 새 uuid 기대, 실제: {request_id!r}"
+    )
+    assert request_id != oversized
+
+
+@pytest.mark.asyncio
+async def test_request_id_rejects_invalid_charset(client: AsyncClient):
+    """charset 위반 (공백 포함) → 새 uuid hex (silent fallback)."""
+    bad_id = "bad id with space"
+    response = await client.get("/__test_request_id", headers={"X-Request-ID": bad_id})
+
+    assert response.status_code == 200
+    request_id = response.headers.get("X-Request-ID")
+    assert request_id is not None
+    assert HEX_32.match(request_id)
+    assert request_id != bad_id
+
+
+def test_validate_helper_rejects_control_unicode_and_special():
+    """헬퍼 단위: 제어 문자 / 비ASCII / 콜론 / 빈 값 모두 None.
+
+    httpx 클라이언트가 raw 제어 문자/비ASCII 헤더를 거부할 수 있어 미들웨어
+    통과 테스트로 직접 검증 불가 — 헬퍼 단위로 격리 검증.
+    """
+    # 거부 케이스
+    assert _validate_incoming_id(None) is None
+    assert _validate_incoming_id("") is None
+    assert _validate_incoming_id("value\nwith\nnewline") is None
+    assert _validate_incoming_id("value\twith\ttab") is None
+    assert _validate_incoming_id("trace-ü") is None  # 비ASCII
+    assert _validate_incoming_id("Root=1-58:abc") is None  # AWS X-Ray 형식
+    assert _validate_incoming_id("a" * (MAX_LENGTH + 1)) is None
+    # 통과 케이스
+    assert _validate_incoming_id("uuid-32-hex") == "uuid-32-hex"
+    assert _validate_incoming_id("a" * MAX_LENGTH) == "a" * MAX_LENGTH
+    assert _validate_incoming_id("Abc_123-XYZ") == "Abc_123-XYZ"
+
+
+@pytest.mark.asyncio
+async def test_request_id_warns_on_rejection(client: AsyncClient, capfd):
+    """검증 실패 시 warn 로그에 사유 + 원본 prefix + 새 ID 포함."""
+    setup_logging()
+    bad_id = "bad id with space"
+    response = await client.get("/__test_request_id", headers={"X-Request-ID": bad_id})
+
+    assert response.status_code == 200
+    captured = capfd.readouterr()
+    assert "X-Request-ID rejected" in captured.err, (
+        f"warn 로그 누락. 실제 stderr:\n{captured.err}"
+    )
+    assert bad_id in captured.err  # 원본 prefix (50자 이내)
