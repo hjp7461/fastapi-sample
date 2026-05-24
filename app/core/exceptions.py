@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from loguru import logger
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
@@ -115,6 +116,33 @@ async def _http_exception_handler(request: Request, exc: Exception) -> JSONRespo
     )
 
 
+async def _app_exception_fallback_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """`AppException` 슈퍼 fallback — 명시 등록 누락된 서브클래스의 안전망 (PR #45).
+
+    - 정확한 status 매핑 없음 → 500 (등록 누락은 코드 버그, 운영자 즉시 인식).
+    - `logger.exception` 으로 traceback + 등록 누락 시그널 기록.
+    - 응답 envelope 유지: {"detail": {"message", "code"}}.
+    - starlette/FastAPI 의 서브 우선 매칭 동작으로 5종 명시 등록은 그대로 우선.
+    """
+    assert isinstance(exc, AppException)
+    logger.exception(
+        "AppException 등록 누락 (fallback handler 적용): type={}, code={}",
+        type(exc).__name__,
+        exc.code,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": {
+                "message": str(exc),
+                "code": exc.code,
+            }
+        },
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """앱 시작 시 도메인 예외 + HTTPException → envelope 응답 매핑 등록.
 
@@ -133,3 +161,5 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(AuthorizationException, _make_handler(403))
     # HTTPException (starlette 등록 → FastAPI HTTPException 자동 catch 서브클래스)
     app.add_exception_handler(StarletteHTTPException, _http_exception_handler)
+    # PR #45: AppException 슈퍼 fallback — 등록 누락된 서브클래스 안전망 (500 + log)
+    app.add_exception_handler(AppException, _app_exception_fallback_handler)
