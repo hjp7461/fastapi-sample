@@ -9,7 +9,7 @@
 | 가드 | 통과 조건 | 실패 | 주요 사용처 |
 | --- | --- | --- | --- |
 | `require_admin` | `is_admin()` | 403 | `GET /users/` 등 사용자 관리 |
-| `require_self_or_admin` | `id == user_id` ∨ `is_admin()` | 403 | `GET /users/{id}` |
+| `require_self_or_admin` | `id == user_id` or `is_admin()` | 403 | `GET /users/{id}` |
 | `require_staff_or_admin` | `can_manage_products()` | 403 | products 변경 4개 |
 
 ## 신규 가드 추가 가이드

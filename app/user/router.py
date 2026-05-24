@@ -3,7 +3,7 @@
 HTTP 요청을 처리하고 적절한 서비스를 호출합니다.
 """
 
-from typing import Any, List, Union
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -73,7 +73,7 @@ async def login_for_access_token(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@router.get("/{user_id}", response_model=Union[UserResponse, UserAdminView])
+@router.get("/{user_id}", response_model=UserResponse | UserAdminView)
 async def get_user_by_id(
     user_id: int,
     current_user: User = Depends(require_self_or_admin),
@@ -91,7 +91,7 @@ async def get_user_by_id(
     return build_admin_view(user)
 
 
-@router.get("/", response_model=List[UserSummary])
+@router.get("/", response_model=list[UserSummary])
 async def list_users(
     skip: int = 0,
     limit: int = 100,

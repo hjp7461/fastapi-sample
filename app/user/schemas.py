@@ -3,7 +3,6 @@
 """
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field, ValidationInfo, field_validator
 
@@ -17,10 +16,10 @@ class UserBase(BaseModel):
 
     email: EmailStr
     username: str
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    role: Optional[UserRole] = UserRole.CUSTOMER
-    is_active: Optional[bool] = True
+    first_name: str | None = None
+    last_name: str | None = None
+    role: UserRole | None = UserRole.CUSTOMER
+    is_active: bool | None = True
 
 
 class UserCreate(UserBase):
@@ -40,13 +39,13 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     """사용자 정보 업데이트 요청."""
 
-    email: Optional[EmailStr] = None
-    username: Optional[str] = None
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    role: Optional[UserRole] = None
-    is_active: Optional[bool] = None
-    password: Optional[str] = Field(None, min_length=8, max_length=64)
+    email: EmailStr | None = None
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    role: UserRole | None = None
+    is_active: bool | None = None
+    password: str | None = Field(None, min_length=8, max_length=64)
 
 
 class UserResponse(UserBase):

@@ -3,7 +3,6 @@
 """
 
 import os
-from typing import List, Optional
 
 from dotenv import load_dotenv
 from pydantic import field_validator
@@ -46,12 +45,12 @@ class Settings(BaseSettings):
     # default 는 기존 동작 호환 (stderr / INFO / text / file 비활성).
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     LOG_FORMAT: str = os.getenv("LOG_FORMAT", "text")
-    LOG_FILE: Optional[str] = os.getenv("LOG_FILE") or None
+    LOG_FILE: str | None = os.getenv("LOG_FILE") or None
     LOG_FILE_ROTATION: str = os.getenv("LOG_FILE_ROTATION", "10 MB")
     LOG_FILE_RETENTION: str = os.getenv("LOG_FILE_RETENTION", "7 days")
 
     # CORS 설정
-    CORS_ORIGINS: List[str] = [
+    CORS_ORIGINS: list[str] = [
         "http://localhost:3000",  # React 앱
         "http://localhost:8000",  # FastAPI 앱
     ]

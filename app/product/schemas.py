@@ -5,7 +5,6 @@ API 요청 및 응답의 데이터 구조를 표현합니다.
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -16,7 +15,7 @@ class ProductBase(BaseModel):
     """상품 기본 속성."""
 
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     price: Decimal = Field(..., ge=0)
     category: ProductCategory = ProductCategory.OTHER
     inventory: int = Field(0, ge=0)
@@ -32,12 +31,12 @@ class ProductCreate(ProductBase):
 class ProductUpdate(BaseModel):
     """상품 정보 업데이트 요청."""
 
-    name: Optional[str] = None
-    description: Optional[str] = None
-    price: Optional[Decimal] = Field(None, ge=0)
-    category: Optional[ProductCategory] = None
-    inventory: Optional[int] = Field(None, ge=0)
-    is_active: Optional[bool] = None
+    name: str | None = None
+    description: str | None = None
+    price: Decimal | None = Field(None, ge=0)
+    category: ProductCategory | None = None
+    inventory: int | None = Field(None, ge=0)
+    is_active: bool | None = None
 
 
 class ProductResponse(ProductBase):
@@ -62,7 +61,7 @@ class ProductPublicView(BaseModel):
 
     id: int
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     price: Decimal
     category: ProductCategory
     is_active: bool

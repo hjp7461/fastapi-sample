@@ -5,7 +5,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,7 +35,7 @@ class InventoryUpdateResult:
     """
 
     outcome: InventoryUpdateOutcome
-    product: Optional[Product] = None
+    product: Product | None = None
 
 
 class ProductRepository:
@@ -61,7 +61,7 @@ class ProductRepository:
         await self.session.refresh(db_product)
         return self._to_domain(db_product)
 
-    async def get_by_id(self, product_id: int) -> Optional[Product]:
+    async def get_by_id(self, product_id: int) -> Product | None:
         """ID로 상품을 조회합니다."""
         result = await self.session.execute(
             select(ProductModel).where(ProductModel.id == product_id)
@@ -72,8 +72,8 @@ class ProductRepository:
         return None
 
     async def update(
-        self, product_id: int, product_data: Dict[str, Any]
-    ) -> Optional[Product]:
+        self, product_id: int, product_data: dict[str, Any]
+    ) -> Product | None:
         """상품 정보를 업데이트합니다."""
         # 먼저 상품이 존재하는지 확인
         result = await self.session.execute(
@@ -115,9 +115,9 @@ class ProductRepository:
         self,
         skip: int = 0,
         limit: int = 100,
-        category: Optional[ProductCategory] = None,
-        is_active: Optional[bool] = None,
-    ) -> List[Product]:
+        category: ProductCategory | None = None,
+        is_active: bool | None = None,
+    ) -> list[Product]:
         """상품 목록을 조회합니다."""
         query = select(ProductModel)
 

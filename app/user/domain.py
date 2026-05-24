@@ -6,7 +6,6 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 
 class UserRole(str, Enum):
@@ -26,8 +25,8 @@ class NewUser:
     email: str
     username: str
     hashed_password: str
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
+    first_name: str | None = None
+    last_name: str | None = None
     role: UserRole = UserRole.CUSTOMER
     is_active: bool = True
 
@@ -51,9 +50,9 @@ class User:
     is_active: bool
     created_at: datetime
     updated_at: datetime
-    hashed_password: Optional[str] = None
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
+    hashed_password: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
 
     @property
     def full_name(self) -> str:

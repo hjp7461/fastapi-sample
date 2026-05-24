@@ -119,7 +119,7 @@ line-length = 88
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "B", "I"]
+select = ["E", "F", "B", "I", "UP", "SIM", "RUF"]
 # B008: FastAPI 의 Depends() / Field() 등은 함수 시그니처 기본값에 함수 호출이
 # 들어가는 것이 표준 패턴이라 본 룰의 의도와 다름.
 ignore = ["B008"]

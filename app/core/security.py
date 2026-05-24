@@ -5,7 +5,7 @@
 
 # from datetime import datetime, timedelta
 from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 import bcrypt
 import jwt
@@ -41,7 +41,7 @@ def get_password_hash(password: str) -> str:
     return hashed.decode("utf-8")
 
 
-def _extract_bcrypt_rounds(hashed_password: str) -> Optional[int]:
+def _extract_bcrypt_rounds(hashed_password: str) -> int | None:
     """bcrypt 해시 (`$2b$<rounds>$<salt+hash>`) 에서 라운드 수를 추출.
 
     파싱 실패 시 None — 호출자가 보수적 처리한다.
@@ -70,7 +70,7 @@ def needs_rehash(hashed_password: str) -> bool:
 
 
 def create_access_token(
-    subject: Union[str, Any], expires_delta: Optional[timedelta] = None
+    subject: str | Any, expires_delta: timedelta | None = None
 ) -> str:
     """
     JWT 액세스 토큰을 생성합니다.
@@ -95,7 +95,7 @@ def create_access_token(
     return encoded_jwt
 
 
-def decode_access_token(token: str) -> Dict[str, Any]:
+def decode_access_token(token: str) -> dict[str, Any]:
     """
     JWT 액세스 토큰을 디코딩합니다.
 
