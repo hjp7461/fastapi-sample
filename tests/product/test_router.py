@@ -84,7 +84,7 @@ async def test_get_product(client: AsyncClient, test_product: dict[str, Any]) ->
 
     # 5. 상품 등록 응답 확인
     assert create_response.status_code == 201
-    created_product = create_response.json()
+    created_product = create_response.json()["data"]
     product_id = created_product["id"]
 
     # 6. 등록된 상품 조회
@@ -100,7 +100,7 @@ async def test_list_products(client: AsyncClient, test_product: dict[str, Any]) 
     response = await client.get("/api/v1/products/")
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
     assert isinstance(data, list)
     assert len(data) > 0
 
@@ -166,7 +166,7 @@ async def test_create_product_as_admin(
 
     # 관리자는 상품 생성이 가능해야 함
     assert response.status_code == 201
-    data = response.json()
+    data = response.json()["data"]
     assert data["name"] == product_data["name"]
     assert data["description"] == product_data["description"]
     assert Decimal(data["price"]) == Decimal(product_data["price"])
@@ -192,7 +192,7 @@ async def test_update_product_as_admin(
     )
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
     assert data["id"] == product_id
     assert data["name"] == update_data["name"]
     assert data["description"] == update_data["description"]
@@ -215,7 +215,7 @@ async def test_update_inventory_as_admin(
     initial_response = await client.get(
         f"/api/v1/products/{product_id}", headers=admin_auth_headers
     )
-    initial_inventory = initial_response.json()["inventory"]
+    initial_inventory = initial_response.json()["data"]["inventory"]
 
     # 재고 업데이트
     response = await client.patch(
@@ -225,7 +225,7 @@ async def test_update_inventory_as_admin(
     )
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
     assert data["id"] == product_id
     assert data["inventory"] == initial_inventory + inventory_update["quantity_change"]
 
@@ -246,7 +246,7 @@ async def test_update_inventory_exact_zero(
     )
 
     assert response.status_code == 200
-    assert response.json()["inventory"] == 0
+    assert response.json()["data"]["inventory"] == 0
 
 
 @pytest.mark.asyncio
@@ -265,7 +265,7 @@ async def test_update_inventory_insufficient(
     )
 
     assert response.status_code == 400
-    data = response.json()
+    data = response.json()  # error envelope (handler 가 처리, SuccessEnvelope 비적용)
     assert "detail" in data
 
     # silent failure 방지: 재고가 변경되지 않았는지 확인 (admin 컨텍스트 필요)
@@ -273,7 +273,7 @@ async def test_update_inventory_insufficient(
         f"/api/v1/products/{product_id}", headers=admin_auth_headers
     )
     assert get_response.status_code == 200
-    assert get_response.json()["inventory"] == 10
+    assert get_response.json()["data"]["inventory"] == 10
 
 
 @pytest.mark.asyncio
@@ -311,7 +311,7 @@ async def test_update_inventory_concurrent_deduction(
     get_response = await client.get(
         f"/api/v1/products/{product_id}", headers=admin_auth_headers
     )
-    assert get_response.json()["inventory"] == 0
+    assert get_response.json()["data"]["inventory"] == 0
 
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
@@ -341,13 +341,13 @@ async def test_filter_products_by_category(
     """카테고리별 상품 필터링 테스트."""
     # 테스트 상품의 카테고리 확인
     product_response = await client.get(f"/api/v1/products/{test_product['id']}")
-    product_category = product_response.json()["category"]
+    product_category = product_response.json()["data"]["category"]
 
     # 해당 카테고리로 필터링
     response = await client.get(f"/api/v1/products/?category={product_category}")
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
     assert isinstance(data, list)
     assert len(data) > 0
 
@@ -363,7 +363,7 @@ async def test_filter_products_by_active_status(client: AsyncClient) -> None:
     response = await client.get("/api/v1/products/?is_active=true")
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
 
     # 모든 상품이 활성 상태인지 확인
     for product in data:
@@ -384,7 +384,7 @@ async def test_get_product_anonymous_returns_public_view(
     response = await client.get(f"/api/v1/products/{test_product['id']}")
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
     assert data["id"] == test_product["id"]
     assert data["name"] == test_product["name"]
     assert "inventory" not in data
@@ -402,7 +402,7 @@ async def test_get_product_as_customer_returns_public_view(
     )
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
     assert data["id"] == test_product["id"]
     assert "inventory" not in data
 
@@ -419,7 +419,7 @@ async def test_get_product_as_admin_returns_full(
     )
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
     assert data["id"] == test_product["id"]
     assert "inventory" in data
     assert data["inventory"] == 10  # test_product fixture
@@ -434,7 +434,7 @@ async def test_list_products_anonymous_excludes_inventory(
     response = await client.get("/api/v1/products/")
 
     assert response.status_code == 200
-    items = response.json()
+    items = response.json()["data"]
     assert isinstance(items, list)
     assert len(items) > 0
     for item in items:
@@ -451,7 +451,7 @@ async def test_list_products_as_admin_includes_inventory(
     response = await client.get("/api/v1/products/", headers=admin_auth_headers)
 
     assert response.status_code == 200
-    items = response.json()
+    items = response.json()["data"]
     assert isinstance(items, list)
     assert len(items) > 0
     for item in items:
@@ -484,7 +484,7 @@ async def test_create_product_as_staff(
     )
 
     assert response.status_code == 201
-    data = response.json()
+    data = response.json()["data"]
     assert data["name"] == product_data["name"]
 
 
@@ -503,7 +503,7 @@ async def test_update_product_as_staff(
     )
 
     assert response.status_code == 200
-    assert response.json()["name"] == update_data["name"]
+    assert response.json()["data"]["name"] == update_data["name"]
 
 
 @pytest.mark.asyncio
@@ -522,7 +522,7 @@ async def test_update_inventory_as_staff(
     )
 
     assert response.status_code == 200
-    assert response.json()["inventory"] == test_product.get("inventory", 10) + 3
+    assert response.json()["data"]["inventory"] == test_product.get("inventory", 10) + 3
 
 
 @pytest.mark.asyncio

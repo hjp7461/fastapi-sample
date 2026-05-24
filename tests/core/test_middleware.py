@@ -194,7 +194,7 @@ async def test_request_id_accessible_via_contextvar(client: AsyncClient) -> None
     )
 
     assert response.status_code == 200
-    body = response.json()
+    body = response.json()["data"]  # SuccessEnvelope wrap (PR #49)
     assert body["request_id"] == custom_id
     assert body["request_id"] == response.headers.get("X-Request-ID")
 
@@ -207,7 +207,9 @@ async def test_request_id_resets_between_requests(client: AsyncClient) -> None:
 
     assert r1.status_code == 200
     assert r2.status_code == 200
-    assert r1.json()["request_id"] != r2.json()["request_id"]
+    assert (
+        r1.json()["data"]["request_id"] != r2.json()["data"]["request_id"]
+    )  # PR #49 envelope
 
 
 # ---------------------------------------------------------------------------
@@ -606,3 +608,88 @@ async def test_app_exception_fallback_handler_returns_envelope_500(
         f"등록 누락 시그널 로그 누락. 실제 stderr:\n{captured.err}"
     )
     assert "_UnregisteredException" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# Success envelope (PR #49) — 2xx JSON 응답 wrap 회귀 가드
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_success_response_is_wrapped_in_data_envelope(
+    client: AsyncClient,
+) -> None:
+    """200 JSON 응답 → `{"data": <payload>}` envelope wrap."""
+    response = await client.get("/__test_request_id")
+    assert response.status_code == 200
+    body = response.json()
+    # envelope 외층
+    assert set(body.keys()) == {"data"}
+    # payload 보존
+    assert "request_id" in body["data"]
+
+
+@pytest.mark.asyncio
+async def test_204_no_content_is_not_wrapped(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    test_product: dict,
+) -> None:
+    """204 No Content → envelope 비적용 (body 없음).
+
+    DELETE /products/{id} 가 204 반환. wrap 시도 시 body 추가는 spec 위반.
+    """
+    product_id = test_product["id"]
+    response = await client.delete(
+        f"/api/v1/products/{product_id}", headers=admin_auth_headers
+    )
+    assert response.status_code == 204
+    assert response.content == b""  # body 없음 보존
+
+
+@pytest.mark.asyncio
+async def test_oauth2_token_endpoint_is_not_wrapped(
+    client: AsyncClient,
+    test_user: dict,
+) -> None:
+    """OAuth2 /users/token → RFC 6749 표준 응답 (envelope 비적용)."""
+    response = await client.post(
+        "/api/v1/users/token",
+        data={"username": test_user["email"], "password": test_user["password"]},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    # RFC 6749: access_token / token_type 직접 노출
+    assert "access_token" in body
+    assert body["token_type"] == "bearer"
+    # envelope 외층 없음
+    assert "data" not in body
+
+
+@pytest.mark.asyncio
+async def test_error_response_not_re_wrapped(
+    client: AsyncClient,
+) -> None:
+    """4xx 응답은 handler 의 envelope 그대로 (SuccessEnvelope 비적용)."""
+    response = await client.get("/__test_raise_404")
+    assert response.status_code == 404
+    body = response.json()
+    # error envelope: detail object
+    assert "detail" in body
+    assert isinstance(body["detail"], dict)
+    assert body["detail"]["code"] == "not_found"
+    # SuccessEnvelope 의 data 외층 없음
+    assert "data" not in body
+
+
+@pytest.mark.asyncio
+async def test_list_response_is_wrapped(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+) -> None:
+    """200 list 응답도 동일 envelope (list 가 data 값으로 들어감)."""
+    response = await client.get("/api/v1/users/", headers=admin_auth_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body.keys()) == {"data"}
+    assert isinstance(body["data"], list)
