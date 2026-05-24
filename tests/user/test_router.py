@@ -560,3 +560,54 @@ async def test_login_with_unknown_email_returns_envelope_401(
     # 동일 메시지로 정보 누설 방지 (이메일 존재 여부 leak 차단)
     assert body["detail"]["message"] == "Incorrect email or password"
     assert response.headers.get("WWW-Authenticate") == "Bearer"
+
+
+# ---------------------------------------------------------------------------
+# require_* / credentials 의 도메인 예외 전환 (PR #47) — envelope code 회귀
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_invalid_token_returns_envelope_authentication_error(
+    client: AsyncClient,
+) -> None:
+    """잘못된 토큰 → get_current_user 가 AuthenticationException → envelope.
+
+    PR #47 회귀 가드: credentials_exception 의 HTTPException → AuthenticationException
+    전환. code='authentication_error' (이전: 'http_401') + WWW-Authenticate Bearer 자동.
+    """
+    response = await client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": "Bearer not.a.valid.jwt"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "detail": {
+            "message": "Could not validate credentials",
+            "code": "authentication_error",
+        }
+    }
+    # PR #46 handler 가 자동 첨부
+    assert response.headers.get("WWW-Authenticate") == "Bearer"
+
+
+@pytest.mark.asyncio
+async def test_require_admin_denied_returns_envelope_authorization_error(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """일반 사용자 → require_admin 거부 → AuthorizationException envelope.
+
+    PR #47 회귀 가드: require_* 의 HTTPException → AuthorizationException 전환.
+    code='authorization_error' (이전: 'http_403').
+    """
+    response = await client.get("/api/v1/users/", headers=auth_headers)
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": {
+            "message": "Not enough permissions",
+            "code": "authorization_error",
+        }
+    }

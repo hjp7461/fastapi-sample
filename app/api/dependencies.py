@@ -8,13 +8,17 @@ from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import PyJWTError
 
 from app.core.config import settings
-from app.core.exceptions import NotFoundException
+from app.core.exceptions import AuthenticationException, NotFoundException
 from app.di.providers import get_user_service
 from app.user.domain import User
 from app.user.service import UserService
 
 # OAuth2 인증 설정
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/users/token")
+
+# 인증 실패 시 동일 메시지로 정보 누설 방지 (사용자 존재 여부 / 토큰 오류 등 구분 X).
+# PR #46 의 handler 가 401 응답에 WWW-Authenticate Bearer 헤더 자동 첨부.
+_CREDENTIALS_FAIL_MESSAGE = "Could not validate credentials"
 
 
 async def get_current_user(
@@ -24,12 +28,6 @@ async def get_current_user(
     """
     현재 인증된 사용자를 검색합니다.
     """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
     try:
         # JWT 토큰 디코딩
         payload = jwt.decode(
@@ -37,16 +35,19 @@ async def get_current_user(
         )
         user_id: int | None = int(payload.get("sub"))
         if user_id is None:
-            raise credentials_exception
-    except (PyJWTError, ValueError):
-        raise credentials_exception from None
+            raise AuthenticationException(_CREDENTIALS_FAIL_MESSAGE)
+    except (PyJWTError, ValueError) as e:
+        raise AuthenticationException(_CREDENTIALS_FAIL_MESSAGE) from e
 
-    # 사용자 조회
-    user = await user_service.get_user(user_id)
-    if user is None:
-        raise credentials_exception
+    # 사용자 조회 — NotFoundException 도 동일 메시지로 변환 (사용자 존재 누설 방지)
+    try:
+        user = await user_service.get_user(user_id)
+    except NotFoundException as e:
+        raise AuthenticationException(_CREDENTIALS_FAIL_MESSAGE) from e
 
     if not user.is_active:
+        # 본 PR 비범위 — inactive user 의 status (400 vs 401/403) 정책 결정은 별도.
+        # PR #42 의 _http_exception_handler 가 envelope 형식 (`http_400`) 으로 변환.
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user"
         )

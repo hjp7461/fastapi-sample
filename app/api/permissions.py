@@ -23,9 +23,10 @@
   (가드는 도메인 정책을 호출만 — 정책의 진실원은 도메인)
 """
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 
 from app.api.dependencies import get_current_user
+from app.core.exceptions import AuthorizationException
 from app.user.domain import User
 
 
@@ -34,10 +35,7 @@ async def require_admin(
 ) -> User:
     """현재 인증된 사용자가 관리자인지 확인합니다."""
     if not current_user.is_admin():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions",
-        )
+        raise AuthorizationException("Not enough permissions")
     return current_user
 
 
@@ -56,10 +54,7 @@ async def require_self_or_admin(
     권한 검사는 자원의 존재 확인보다 먼저 평가되어 ID 열거 공격을 차단한다.
     """
     if current_user.id != user_id and not current_user.is_admin():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions",
-        )
+        raise AuthorizationException("Not enough permissions")
     return current_user
 
 
@@ -72,8 +67,5 @@ async def require_staff_or_admin(
     도메인 한 곳만 변경하면 가드 동작이 따라간다.
     """
     if not current_user.can_manage_products():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions",
-        )
+        raise AuthorizationException("Not enough permissions")
     return current_user
