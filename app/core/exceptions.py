@@ -73,11 +73,14 @@ class BusinessLogicException(AppException):
 
 def _make_handler(
     status_code: int,
+    headers: dict[str, str] | None = None,
 ) -> Callable[[Request, Exception], Awaitable[JSONResponse]]:
     """도메인 예외를 envelope 응답으로 변환하는 핸들러 생성 (PR #42).
 
     응답 형식: {"detail": {"message": str(exc), "code": exc.code}}
     `code` 는 `AppException.code` (예: 'not_found', 'validation_error').
+    `headers` 는 응답에 항상 첨부 (PR #46) — 401 의 WWW-Authenticate Bearer 등
+    RFC 7235 필수 헤더 보존.
     """
 
     async def handler(request: Request, exc: Exception) -> JSONResponse:
@@ -90,6 +93,7 @@ def _make_handler(
                     "code": code,
                 }
             },
+            headers=headers,
         )
 
     return handler
@@ -157,7 +161,11 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(NotFoundException, _make_handler(404))
     app.add_exception_handler(ValidationException, _make_handler(400))
     app.add_exception_handler(BusinessLogicException, _make_handler(400))
-    app.add_exception_handler(AuthenticationException, _make_handler(401))
+    # PR #46: 401 에 RFC 7235 의 WWW-Authenticate Bearer 헤더 자동 첨부
+    app.add_exception_handler(
+        AuthenticationException,
+        _make_handler(401, headers={"WWW-Authenticate": "Bearer"}),
+    )
     app.add_exception_handler(AuthorizationException, _make_handler(403))
     # HTTPException (starlette 등록 → FastAPI HTTPException 자동 catch 서브클래스)
     app.add_exception_handler(StarletteHTTPException, _http_exception_handler)
