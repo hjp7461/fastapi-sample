@@ -161,7 +161,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(NotFoundException, _make_handler(404))
     app.add_exception_handler(ValidationException, _make_handler(400))
     app.add_exception_handler(BusinessLogicException, _make_handler(400))
-    # PR #46: AuthenticationException 401 응답에 RFC 7235 WWW-Authenticate Bearer 헤더 첨부
+    # PR #46: 401 에 RFC 7235 의 WWW-Authenticate Bearer 헤더 자동 첨부
     app.add_exception_handler(
         AuthenticationException,
         _make_handler(401, headers={"WWW-Authenticate": "Bearer"}),
