@@ -3,7 +3,7 @@
 """
 
 import jwt
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import PyJWTError
 
@@ -46,11 +46,9 @@ async def get_current_user(
         raise AuthenticationException(_CREDENTIALS_FAIL_MESSAGE) from e
 
     if not user.is_active:
-        # 본 PR 비범위 — inactive user 의 status (400 vs 401/403) 정책 결정은 별도.
-        # PR #42 의 _http_exception_handler 가 envelope 형식 (`http_400`) 으로 변환.
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user"
-        )
+        # PR #46 handler 가 401 + WWW-Authenticate Bearer 자동 첨부 (RFC 7235).
+        # 메시지는 credentials 실패와 차별화 (클라이언트 재활성화 안내 분기 가능).
+        raise AuthenticationException("Inactive user account")
 
     return user
 
