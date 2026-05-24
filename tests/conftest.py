@@ -2,8 +2,21 @@
 
 - StaticPool 기반 인메모리 SQLite로 격리
 - dependency_injector Container의 engine/session_factory를 테스트용으로 override
+- bcrypt 라운드는 BCRYPT_ROUNDS=6 으로 강제 (테스트 시간 단축 ~60x,
+  다운그레이드 의미 검증 호환). 운영 권장 12 유지 (Settings default).
 - 비동기 경로(`async`)는 그대로 유지
 """
+
+import os
+
+# bcrypt 라운드는 settings import 전에 환경 변수 주입 (PR #44).
+# - app/core/config.py 의 settings = Settings() 는 import 시점에 평가.
+# - 외부 override 가능 (setdefault 사용) — CI 가 운영 시뮬레이션 시점에
+#   BCRYPT_ROUNDS=12 명시 주입 가능.
+# - 6 으로 낮춘 이유: 4 는 needs_rehash / 다운그레이드 검증 테스트 깨짐
+#   (rounds=4 vs settings=4 비교 불가). 6 은 rounds=4 와 명확히 구분 +
+#   ~60x bcrypt 가속.
+os.environ.setdefault("BCRYPT_ROUNDS", "6")
 
 from collections.abc import AsyncIterator
 from typing import Any
