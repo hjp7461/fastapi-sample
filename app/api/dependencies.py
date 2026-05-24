@@ -2,8 +2,6 @@
 공통 API 의존성.
 """
 
-from typing import Optional
-
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
@@ -37,7 +35,7 @@ async def get_current_user(
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
-        user_id: Optional[int] = int(payload.get("sub"))
+        user_id: int | None = int(payload.get("sub"))
         if user_id is None:
             raise credentials_exception
     except (PyJWTError, ValueError):
@@ -59,7 +57,7 @@ async def get_current_user(
 async def get_optional_current_user(
     request: Request,
     user_service: UserService = Depends(get_user_service),
-) -> Optional[User]:
+) -> User | None:
     """공개 조회용 옵셔널 인증.
 
     `Authorization` 헤더가 없거나 토큰이 무효하면 ``None`` 을 반환한다

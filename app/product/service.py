@@ -3,7 +3,7 @@
 비즈니스 로직과 유즈케이스를 포함합니다.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.core.exceptions import (
     BusinessLogicException,
@@ -24,7 +24,7 @@ class ProductService:
     def __init__(self, product_repository: ProductRepository):
         self.product_repository = product_repository
 
-    async def create_product(self, product_data: Dict[str, Any]) -> Product:
+    async def create_product(self, product_data: dict[str, Any]) -> Product:
         """새 상품을 생성합니다."""
         new_product = NewProduct(
             name=product_data["name"],
@@ -45,7 +45,7 @@ class ProductService:
         return product
 
     async def update_product(
-        self, product_id: int, product_data: Dict[str, Any]
+        self, product_id: int, product_data: dict[str, Any]
     ) -> Product:
         """상품 정보를 업데이트합니다."""
         product = await self.product_repository.update(product_id, product_data)
@@ -67,9 +67,9 @@ class ProductService:
         self,
         skip: int = 0,
         limit: int = 100,
-        category: Optional[ProductCategory] = None,
-        is_active: Optional[bool] = None,
-    ) -> List[Product]:
+        category: ProductCategory | None = None,
+        is_active: bool | None = None,
+    ) -> list[Product]:
         """상품 목록을 조회합니다."""
         return await self.product_repository.list(
             skip=skip, limit=limit, category=category, is_active=is_active

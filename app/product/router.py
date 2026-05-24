@@ -3,7 +3,7 @@
 HTTP 요청을 처리하고 적절한 서비스를 호출합니다.
 """
 
-from typing import Any, List, Optional, Union
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query, status
 
@@ -35,10 +35,10 @@ async def create_product(
     return await product_service.create_product(product_in.model_dump())
 
 
-@router.get("/{product_id}", response_model=Union[ProductPublicView, ProductResponse])
+@router.get("/{product_id}", response_model=ProductPublicView | ProductResponse)
 async def get_product_by_id(
     product_id: int,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User | None = Depends(get_optional_current_user),
     product_service: ProductService = Depends(get_product_service),
 ) -> Any:
     """특정 상품 정보를 조회합니다.
@@ -78,14 +78,14 @@ async def delete_product(
 
 @router.get(
     "/",
-    response_model=Union[List[ProductResponse], List[ProductPublicView]],
+    response_model=list[ProductResponse] | list[ProductPublicView],
 )
 async def list_products(
     skip: int = 0,
     limit: int = 100,
-    category: Optional[ProductCategory] = None,
-    is_active: Optional[bool] = Query(None, description="활성화 상태 필터링"),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    category: ProductCategory | None = None,
+    is_active: bool | None = Query(None, description="활성화 상태 필터링"),
+    current_user: User | None = Depends(get_optional_current_user),
     product_service: ProductService = Depends(get_product_service),
 ) -> Any:
     """상품 목록을 조회합니다.

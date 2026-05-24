@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Optional, Union
 
 
 class ProductCategory(str, Enum):
@@ -28,9 +27,9 @@ class NewProduct:
     """
 
     name: str
-    price: Union[float, Decimal]
+    price: float | Decimal
     category: ProductCategory = ProductCategory.OTHER
-    description: Optional[str] = None
+    description: str | None = None
     inventory: int = 0
     is_active: bool = True
 
@@ -48,13 +47,13 @@ class Product:
 
     id: int
     name: str
-    price: Union[float, Decimal]
+    price: float | Decimal
     category: ProductCategory
     inventory: int
     is_active: bool
     created_at: datetime
     updated_at: datetime
-    description: Optional[str] = None
+    description: str | None = None
 
     def is_in_stock(self) -> bool:
         """상품 재고가 있는지 확인합니다."""

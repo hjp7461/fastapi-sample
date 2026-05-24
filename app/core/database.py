@@ -6,7 +6,8 @@
 스키마 생성/변경은 alembic 으로 관리한다 (`uv run alembic upgrade head`).
 """
 
-from typing import AsyncGenerator, cast
+from collections.abc import AsyncGenerator
+from typing import cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import declarative_base

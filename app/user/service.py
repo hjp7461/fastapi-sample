@@ -4,7 +4,7 @@
 """
 
 from datetime import timedelta
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from loguru import logger
 
@@ -28,7 +28,7 @@ class UserService:
     def __init__(self, user_repository: UserRepository):
         self.user_repository = user_repository
 
-    async def authenticate_user(self, email: str, password: str) -> Optional[User]:
+    async def authenticate_user(self, email: str, password: str) -> User | None:
         """사용자 인증을 처리합니다.
 
         verify 성공 후 저장된 해시의 라운드를 검사해 다음 정책을 적용한다.
@@ -73,7 +73,7 @@ class UserService:
 
         return user
 
-    async def create_user(self, user_data: Dict[str, Any]) -> User:
+    async def create_user(self, user_data: dict[str, Any]) -> User:
         """새 사용자를 생성합니다."""
         # 이메일 중복 확인
         existing_user = await self.user_repository.get_by_email(user_data["email"])
@@ -104,10 +104,10 @@ class UserService:
             raise NotFoundException(f"User with ID {user_id} not found")
         return user
 
-    async def update_user(self, user_id: int, user_data: Dict[str, Any]) -> User:
+    async def update_user(self, user_id: int, user_data: dict[str, Any]) -> User:
         """사용자 정보를 업데이트합니다."""
         # 비밀번호가 있으면 해싱
-        if "password" in user_data and user_data["password"]:
+        if user_data.get("password"):
             user_data["hashed_password"] = get_password_hash(user_data.pop("password"))
 
         # 업데이트 실행
@@ -126,12 +126,12 @@ class UserService:
 
         return await self.user_repository.delete(user_id)
 
-    async def list_users(self, skip: int = 0, limit: int = 100) -> List[User]:
+    async def list_users(self, skip: int = 0, limit: int = 100) -> list[User]:
         """사용자 목록을 조회합니다."""
         return await self.user_repository.list(skip, limit)
 
     def create_access_token_for_user(
-        self, user: Union[User, int], expires_delta: Optional[timedelta] = None
+        self, user: User | int, expires_delta: timedelta | None = None
     ) -> str:
         """사용자를 위한 액세스 토큰을 생성합니다."""
         user_id = user.id if isinstance(user, User) else user

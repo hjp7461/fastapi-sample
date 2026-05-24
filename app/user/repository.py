@@ -3,8 +3,6 @@
 데이터베이스와의 상호작용을 담당합니다.
 """
 
-from typing import List, Optional
-
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,7 +34,7 @@ class UserRepository:
         await self.session.refresh(db_user)
         return self._to_domain(db_user)
 
-    async def get_by_id(self, user_id: int) -> Optional[User]:
+    async def get_by_id(self, user_id: int) -> User | None:
         """ID로 사용자를 조회합니다."""
         result = await self.session.execute(
             select(UserModel).where(UserModel.id == user_id)
@@ -46,7 +44,7 @@ class UserRepository:
             return self._to_domain(db_user)
         return None
 
-    async def get_by_email(self, email: str) -> Optional[User]:
+    async def get_by_email(self, email: str) -> User | None:
         """이메일로 사용자를 조회합니다."""
         result = await self.session.execute(
             select(UserModel).where(UserModel.email == email)
@@ -56,7 +54,7 @@ class UserRepository:
             return self._to_domain(db_user)
         return None
 
-    async def update(self, user_id: int, user_data: dict) -> Optional[User]:
+    async def update(self, user_id: int, user_data: dict) -> User | None:
         """사용자 정보를 업데이트합니다."""
         # 먼저 사용자가 존재하는지 확인
         result = await self.session.execute(
@@ -92,7 +90,7 @@ class UserRepository:
         await self.session.commit()
         return result.rowcount > 0
 
-    async def list(self, skip: int = 0, limit: int = 100) -> List[User]:
+    async def list(self, skip: int = 0, limit: int = 100) -> list[User]:
         """사용자 목록을 조회합니다."""
         result = await self.session.execute(select(UserModel).offset(skip).limit(limit))
         return [self._to_domain(user) for user in result.scalars().all()]
