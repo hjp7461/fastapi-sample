@@ -47,10 +47,13 @@ jobs:
           restore-keys: mypy-${{ runner.os }}-
 
       - name: pre-commit (ruff + 위생 hooks + mypy app/ tests/)
-        run: uv run pre-commit run --all-files --show-diff-on-failure
+        # --no-sync: uv 0.11.x 가 `uv run` 의 sync 단계에서 lockfile 의
+        # [options]/exclude-newer 자동 추가/제거 → CI cache 와 drift (PR #48).
+        # 직전 step 의 `uv sync --frozen` 가 venv 보장.
+        run: uv run --no-sync pre-commit run --all-files --show-diff-on-failure
 
       - name: pytest
-        run: uv run pytest -q
+        run: uv run --no-sync pytest -q
 
       - name: alembic upgrade head + downgrade base (SQLite smoke)
         env:

@@ -545,24 +545,36 @@ async def test_http_exception_403_envelope(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_request_validation_error_keeps_fastapi_default(
+async def test_request_validation_error_envelope(
     client: AsyncClient,
 ) -> None:
-    """422 RequestValidationError 는 FastAPI default 형식 유지 (envelope 비적용).
+    """422 RequestValidationError → envelope + field별 errors + PII 차단 (PR #48).
 
-    회귀 가드: PR #42 의 envelope 표준화가 422 까지 잘못 영향 미치지
-    않도록 보장. 422 는 field별 정보 list 라 별도 envelope 후속.
+    회귀 가드:
+    - detail 이 list (FastAPI default) 가 아닌 envelope object
+    - code='request_validation_error', message='Validation error'
+    - errors 항목별 loc/msg/type 보존
+    - raw `input` (사용자 body) 차단 (PII 누설 방지)
     """
-    # /api/v1/users/ POST 에 invalid body 전송 (email 누락 등)
     response = await client.post("/api/v1/users/", json={"username": "x"})
     assert response.status_code == 422
     body = response.json()
-    # FastAPI default: detail 이 list of field errors
-    assert isinstance(body["detail"], list)
-    assert len(body["detail"]) > 0
-    # 각 항목은 loc/msg/type 키 보유
-    assert "loc" in body["detail"][0]
-    assert "msg" in body["detail"][0]
+
+    # envelope object (이전 PR #42 까지는 list 였음)
+    assert isinstance(body["detail"], dict)
+    assert body["detail"]["message"] == "Validation error"
+    assert body["detail"]["code"] == "request_validation_error"
+
+    # field별 errors 보존
+    errors = body["detail"]["errors"]
+    assert isinstance(errors, list)
+    assert len(errors) > 0
+    for err in errors:
+        assert "loc" in err
+        assert "msg" in err
+        assert "type" in err
+        # PII 차단: raw input 키 응답 노출 X
+        assert "input" not in err
 
 
 # ---------------------------------------------------------------------------
