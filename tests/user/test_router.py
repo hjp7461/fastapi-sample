@@ -26,7 +26,7 @@ async def test_create_user(client: AsyncClient) -> None:
     response = await client.post("/api/v1/users/", json=user_data)
 
     assert response.status_code == 201
-    data = response.json()
+    data = response.json()["data"]
     assert data["email"] == user_data["email"]
     assert data["username"] == user_data["username"]
     assert "id" in data
@@ -44,6 +44,7 @@ async def test_login(client: AsyncClient, test_user: dict[str, Any]) -> None:
     response = await client.post("/api/v1/users/token", data=login_data)
 
     assert response.status_code == 200
+    # OAuth2 token (/users/token) 은 RFC 6749 표준 응답 유지 (envelope 비적용)
     data = response.json()
     assert "access_token" in data
     assert data["token_type"] == "bearer"
@@ -224,7 +225,7 @@ async def test_get_current_user(
     response = await client.get("/api/v1/users/me", headers=auth_headers)
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
     assert data["email"] == test_user["email"]
     assert data["username"] == test_user["username"]
     assert "password" not in data
@@ -246,7 +247,7 @@ async def test_update_current_user(
     )
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
     assert data["username"] == update_data["username"]
     assert data["first_name"] == update_data["first_name"]
     assert data["last_name"] == update_data["last_name"]
@@ -263,7 +264,7 @@ async def test_get_user_by_id(
     response = await client.get(f"/api/v1/users/{user_id}", headers=auth_headers)
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
     assert data["id"] == user_id
     assert data["email"] == test_user["email"]
     assert data["username"] == test_user["username"]
@@ -283,7 +284,7 @@ async def test_get_nonexistent_user(
     )
 
     assert response.status_code == 404
-    data = response.json()
+    data = response.json()  # error envelope (handler 가 처리, SuccessEnvelope 비적용)
     assert "detail" in data
 
 
@@ -310,7 +311,7 @@ async def test_get_other_user_as_regular_user(
     )
 
     assert response.status_code == 403
-    data = response.json()
+    data = response.json()  # error envelope (handler 가 처리, SuccessEnvelope 비적용)
     assert "detail" in data
 
 
@@ -350,7 +351,7 @@ async def test_get_other_user_as_admin(
     )
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
     assert data["id"] == test_user["id"]
 
 
@@ -364,7 +365,7 @@ async def test_access_admin_endpoint_as_regular_user(
 
     # 권한 부족으로 접근 거부되어야 함
     assert response.status_code == 403
-    data = response.json()
+    data = response.json()  # error envelope (handler 가 처리, SuccessEnvelope 비적용)
     assert "detail" in data
 
 
@@ -378,7 +379,7 @@ async def test_access_admin_endpoint_as_admin(
 
     # 성공적으로 접근 가능해야 함
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
     assert isinstance(data, list)
     assert len(data) > 0  # 최소한 관리자 자신의 계정이 있어야 함
 
@@ -427,7 +428,7 @@ async def test_get_self_returns_full_user_response(
     )
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
     assert data["email"] == test_user["email"]  # 본인은 평문
     assert "first_name" in data
     assert "last_name" in data
@@ -447,7 +448,7 @@ async def test_get_other_user_as_admin_returns_masked_view(
     )
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
 
     assert data["id"] == test_user["id"]
     # email 마스킹 (평문과 다름 + *** 포함)
@@ -483,7 +484,7 @@ async def test_admin_view_email_raw_when_masking_disabled(
     )
 
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["data"]
     assert data["email"] == test_user["email"]
     assert "***" not in data["email"]
 
@@ -497,7 +498,7 @@ async def test_list_users_returns_summary_without_pii(
     response = await client.get("/api/v1/users/", headers=admin_auth_headers)
 
     assert response.status_code == 200
-    items = response.json()
+    items = response.json()["data"]
     assert isinstance(items, list)
     assert len(items) > 0
 
@@ -555,7 +556,7 @@ async def test_login_with_unknown_email_returns_envelope_401(
     )
 
     assert response.status_code == 401
-    body = response.json()
+    body = response.json()  # error envelope (SuccessEnvelope 비적용)
     assert body["detail"]["code"] == "authentication_error"
     # 동일 메시지로 정보 누설 방지 (이메일 존재 여부 leak 차단)
     assert body["detail"]["message"] == "Incorrect email or password"

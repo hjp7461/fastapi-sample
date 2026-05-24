@@ -2,16 +2,19 @@
 
 - `RequestIDMiddleware`: 매 요청에 trace ID 부여 → contextvar 저장 → 응답 헤더.
 - `AccessLogMiddleware`: 요청별 access log 한 줄 출력 (loguru, request_id 자동 첨부).
+- `SuccessEnvelopeMiddleware`: 2xx JSON 응답을 `{"data": <payload>}` wrap (PR #49).
 """
 
+import json
 import re
 import time
 import uuid
+from typing import cast
 
 from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, StreamingResponse
 from starlette.types import ASGIApp
 
 from app.core.context import request_id_var
@@ -116,3 +119,77 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
                 status=status,
                 elapsed_ms=elapsed_ms,
             )
+
+
+# ---------------------------------------------------------------------------
+# Success envelope (PR #49) — 2xx JSON 응답을 `{"data": <payload>}` wrap
+# ---------------------------------------------------------------------------
+
+OAUTH2_EXCEPTION_PATHS = frozenset({"/api/v1/users/token"})
+
+
+class SuccessEnvelopeMiddleware(BaseHTTPMiddleware):
+    """2xx JSON 응답을 `{"data": <payload>}` envelope 으로 wrap (PR #49).
+
+    예외 (비적용):
+    - 4xx/5xx — handler 가 이미 envelope 처리 (PR #41/#42/#45/#46/#47/#48)
+    - 204 No Content — body 없음
+    - non-JSON content-type — HTML / stream / binary
+    - OAUTH2_EXCEPTION_PATHS — RFC 6749 표준 응답 (`/users/token`)
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        super().__init__(app)
+
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        response = await call_next(request)
+
+        # 비적용 케이스 조기 반환
+        if not (200 <= response.status_code < 300):
+            return response
+        if response.status_code == 204:
+            return response
+        if request.url.path in OAUTH2_EXCEPTION_PATHS:
+            return response
+        content_type = response.headers.get("content-type", "")
+        if not content_type.startswith("application/json"):
+            return response
+
+        # body 추출 — BaseHTTPMiddleware 는 항상 StreamingResponse 로 wrap.
+        streaming = cast(StreamingResponse, response)
+        body = b""
+        async for chunk in streaming.body_iterator:
+            if isinstance(chunk, str):
+                body += chunk.encode("utf-8")
+            elif isinstance(chunk, memoryview):
+                body += bytes(chunk)
+            else:
+                body += chunk
+
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            # JSON 파싱 실패 시 원본 그대로 (안전망 — 실제로 도달 안 함)
+            return Response(
+                content=body,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=content_type,
+            )
+
+        # envelope wrap
+        wrapped = json.dumps({"data": payload}, ensure_ascii=False).encode("utf-8")
+        # content-length / content-type 은 starlette Response 가 재계산
+        new_headers = {
+            k: v
+            for k, v in response.headers.items()
+            if k.lower() not in ("content-length", "content-type")
+        }
+        return Response(
+            content=wrapped,
+            status_code=response.status_code,
+            headers=new_headers,
+            media_type="application/json",
+        )

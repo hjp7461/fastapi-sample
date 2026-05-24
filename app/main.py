@@ -14,7 +14,11 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import setup_logging
-from app.core.middleware import AccessLogMiddleware, RequestIDMiddleware
+from app.core.middleware import (
+    AccessLogMiddleware,
+    RequestIDMiddleware,
+    SuccessEnvelopeMiddleware,
+)
 from app.di.containers import Container
 
 # 로깅 단일 진입점 — sink/포맷/레벨 환경 변수 기반 구성
@@ -62,11 +66,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 미들웨어 wrap 순서 (outermost → inner): RequestID → AccessLog → CORS.
-# Starlette `add_middleware` 는 add 역순 wrap (마지막에 add 한 것이 outermost) 이므로
-# 등록 순서는 inner 먼저: CORS (이미 등록) → AccessLog → RequestID.
-# AccessLog 가 RequestID 안쪽이어야 contextvar 가 살아있을 때 logger 호출되어
-# request_id 가 access log 에도 첨부된다.
+# 미들웨어 wrap 순서 (outermost → inner):
+#   RequestID → AccessLog → SuccessEnvelope → CORS.
+# Starlette `add_middleware` 는 add 역순 wrap (마지막에 add 한 것이 outermost)
+# 이므로 등록 순서는 inner 먼저: CORS (이미 등록) → SuccessEnvelope → AccessLog
+# → RequestID. AccessLog 가 RequestID 안쪽이어야 contextvar 가 살아있을 때
+# logger 호출되어 request_id 가 access log 에도 첨부된다. SuccessEnvelope 는
+# 라우터에 가장 가까운 안쪽 (CORS 다음) 에 위치 — 응답 body 변환만 담당하고
+# 헤더/로깅/contextvar 는 outer 가 처리.
+app.add_middleware(SuccessEnvelopeMiddleware)
 app.add_middleware(AccessLogMiddleware)
 app.add_middleware(RequestIDMiddleware)
 
