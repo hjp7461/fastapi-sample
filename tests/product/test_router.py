@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.user.domain import UserRole
 
@@ -602,3 +603,89 @@ async def test_update_product_anonymous_unauthenticated(
     )
 
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_list_products_paginated_envelope(
+    client: AsyncClient, test_product: dict[str, Any]
+) -> None:
+    """PR #52: GET /products/ 응답이 `{data, meta: {total, skip, limit}}` 형식.
+
+    middleware idempotent 룰 (dict + data 키 → wrap skip) 회귀 가드 겸용.
+    """
+    response = await client.get("/api/v1/products/?skip=0&limit=20")
+    assert response.status_code == 200
+    body = response.json()
+    assert "data" in body and "meta" in body
+    assert isinstance(body["data"], list)
+    assert body["meta"]["skip"] == 0
+    assert body["meta"]["limit"] == 20
+    assert body["meta"]["total"] >= 1  # test_product 최소 1
+
+
+@pytest.mark.asyncio
+async def test_list_products_filter_count_matches(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """PR #52: `is_active=true/false` 필터 시 meta.total 이 필터 후 카운트.
+
+    전체 count 가 아니라 필터 적용 후 카운트인지 — repository.count(filter) 회귀.
+    """
+    from app.product.domain import ProductCategory
+    from app.product.models import ProductModel
+
+    # active=true 1건, active=false 1건 추가
+    active = ProductModel(
+        name="active-1",
+        description="x",
+        price=Decimal("1.00"),
+        category=ProductCategory.ELECTRONICS,
+        inventory=1,
+        is_active=True,
+    )
+    inactive = ProductModel(
+        name="inactive-1",
+        description="x",
+        price=Decimal("1.00"),
+        category=ProductCategory.ELECTRONICS,
+        inventory=1,
+        is_active=False,
+    )
+    db_session.add_all([active, inactive])
+    await db_session.commit()
+
+    # is_active=false → inactive 만 포함
+    response_inactive = await client.get(
+        "/api/v1/products/?is_active=false", headers=admin_auth_headers
+    )
+    assert response_inactive.status_code == 200
+    body_inactive = response_inactive.json()
+    inactive_total = body_inactive["meta"]["total"]
+    inactive_count_in_data = len(body_inactive["data"])
+    # 필터 적용된 결과만 카운트 (전체 카운트 아님)
+    assert inactive_total == inactive_count_in_data
+    assert inactive_total >= 1  # 최소 방금 추가한 inactive 1건
+
+
+@pytest.mark.parametrize(
+    "params,expected_status",
+    [
+        ({"skip": -1}, 422),
+        ({"limit": 0}, 422),
+        ({"limit": 1001}, 422),
+        ({"skip": 0, "limit": 1000}, 200),
+    ],
+)
+@pytest.mark.asyncio
+async def test_list_products_query_constraints(
+    client: AsyncClient,
+    params: dict[str, int],
+    expected_status: int,
+) -> None:
+    """PR #52: product 도 동일 Query 제약 (skip≥0, 1≤limit≤1000)."""
+    response = await client.get("/api/v1/products/", params=params)
+    assert response.status_code == expected_status
+    if expected_status == 422:
+        assert response.json()["detail"]["code"] == "request_validation_error"

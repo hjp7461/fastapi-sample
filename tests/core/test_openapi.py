@@ -134,3 +134,37 @@ async def test_envelope_components_registered(client: AsyncClient) -> None:
         "ValidationErrorItem",
     ):
         assert name in components, f"missing component: {name}"
+
+
+@pytest.mark.asyncio
+async def test_paginated_response_schema_not_double_wrapped(
+    client: AsyncClient,
+) -> None:
+    """PR #52: list endpoint 의 PaginatedResponse[T] schema 가 envelope 이중 wrap 안 됨.
+
+    customizer 의 idempotent 룰 (`$ref` follow → properties 의 `data` 키 검사) 회귀.
+    이중 wrap 시 schema 가 `{type: object, properties: {data: <PaginatedResponse>}}`
+    가 됨 → 즉시 실패.
+    """
+    response = await client.get("/api/v1/openapi.json")
+    schema = response.json()["data"]
+
+    op = schema["paths"]["/api/v1/users/"]["get"]
+    success = op["responses"]["200"]["content"]["application/json"]["schema"]
+
+    # PaginatedResponse 가 $ref 또는 inline — 둘 다 data + meta 필드만 있어야 함
+    components = schema["components"]["schemas"]
+    if "$ref" in success:
+        ref_name = success["$ref"].rsplit("/", 1)[-1]
+        target = components[ref_name]
+        properties = target.get("properties", {})
+    else:
+        properties = success.get("properties", {})
+
+    assert "data" in properties
+    assert "meta" in properties
+    # 이중 wrap 검증: data 는 array (list[UserSummary]), object 가 아님
+    data_schema = properties["data"]
+    assert data_schema.get("type") == "array", (
+        f"data 가 array 가 아님 (이중 wrap 의심): {data_schema}"
+    )

@@ -3,7 +3,7 @@
 데이터베이스와의 상호작용을 담당합니다.
 """
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.user.domain import NewUser, User
@@ -94,6 +94,11 @@ class UserRepository:
         """사용자 목록을 조회합니다."""
         result = await self.session.execute(select(UserModel).offset(skip).limit(limit))
         return [self._to_domain(user) for user in result.scalars().all()]
+
+    async def count(self) -> int:
+        """전체 사용자 수 — pagination meta 의 total (PR #52)."""
+        result = await self.session.execute(select(func.count()).select_from(UserModel))
+        return result.scalar_one()
 
     def _to_domain(self, db_user: UserModel) -> User:
         """데이터베이스 모델을 도메인 엔티티로 변환합니다."""
