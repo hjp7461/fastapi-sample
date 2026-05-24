@@ -19,6 +19,7 @@ from app.core.middleware import (
     RequestIDMiddleware,
     SuccessEnvelopeMiddleware,
 )
+from app.core.openapi import customize_openapi
 from app.di.containers import Container
 
 # 로깅 단일 진입점 — sink/포맷/레벨 환경 변수 기반 구성
@@ -56,6 +57,11 @@ app = FastAPI(
 
 # 도메인 예외 → HTTP status 자동 변환 (단일 진실원: app/core/exceptions.py)
 register_exception_handlers(app)
+
+# OpenAPI 스키마 envelope 적용 (PR #51) — middleware ↔ OpenAPI 단일 진실원.
+# success {"data": <T>} wrap + error envelope 일괄 주입 (라우터 변경 0).
+# FastAPI 공식 custom_openapi 패턴 — bound method 재할당이라 mypy ignore.
+app.openapi = lambda: customize_openapi(app)  # type: ignore[method-assign]
 
 # CORS 설정
 app.add_middleware(
