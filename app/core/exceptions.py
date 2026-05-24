@@ -126,7 +126,7 @@ async def _request_validation_exception_handler(
 ) -> JSONResponse:
     """RequestValidationError (422) → envelope 응답 변환 (PR #48).
 
-    응답 형식: {"detail": {"message", "code": "request_validation_error", "errors": [...]}}
+    응답: {"detail": {"message", "code": "request_validation_error", "errors": [...]}}
     field별 errors 보존 (loc/msg/type). raw `input` 은 PII 차단으로 제외.
     """
     assert isinstance(exc, RequestValidationError)
