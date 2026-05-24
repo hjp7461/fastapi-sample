@@ -5,11 +5,12 @@ HTTP 요청을 처리하고 적절한 서비스를 호출합니다.
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.dependencies import get_current_user
 from app.api.permissions import require_admin, require_self_or_admin
+from app.core.exceptions import AuthenticationException
 from app.di.providers import get_user_service
 from app.user.domain import User
 from app.user.schemas import (
@@ -63,11 +64,7 @@ async def login_for_access_token(
     """
     user = await user_service.authenticate_user(form_data.username, form_data.password)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise AuthenticationException("Incorrect email or password")
 
     access_token = user_service.create_access_token_for_user(user)
     return {"access_token": access_token, "token_type": "bearer"}

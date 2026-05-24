@@ -512,3 +512,51 @@ async def test_list_users_returns_summary_without_pii(
         assert "role" in item
         assert "is_active" in item
         assert "created_at" in item
+
+
+# ---------------------------------------------------------------------------
+# login 의 AuthenticationException 전환 (PR #46) — envelope + WWW-Authenticate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_login_with_invalid_credentials_returns_envelope_401(
+    client: AsyncClient, test_user: dict[str, Any]
+) -> None:
+    """잘못된 비번 → AuthenticationException → 401 envelope + WWW-Authenticate.
+
+    PR #46 회귀 가드: login 의 HTTPException(401) → AuthenticationException 전환.
+    code='authentication_error' (도메인 예외 분류) + RFC 7235 WWW-Authenticate Bearer.
+    """
+    response = await client.post(
+        "/api/v1/users/token",
+        data={"username": test_user["email"], "password": "wrong_password"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "detail": {
+            "message": "Incorrect email or password",
+            "code": "authentication_error",
+        }
+    }
+    # RFC 7235 MUST: 401 응답에 WWW-Authenticate 헤더 필수 (OAuth2 호환)
+    assert response.headers.get("WWW-Authenticate") == "Bearer"
+
+
+@pytest.mark.asyncio
+async def test_login_with_unknown_email_returns_envelope_401(
+    client: AsyncClient,
+) -> None:
+    """존재하지 않는 이메일 → 동일 401 envelope (정보 누설 방지)."""
+    response = await client.post(
+        "/api/v1/users/token",
+        data={"username": "nobody@example.com", "password": "anything"},
+    )
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["detail"]["code"] == "authentication_error"
+    # 동일 메시지로 정보 누설 방지 (이메일 존재 여부 leak 차단)
+    assert body["detail"]["message"] == "Incorrect email or password"
+    assert response.headers.get("WWW-Authenticate") == "Bearer"
