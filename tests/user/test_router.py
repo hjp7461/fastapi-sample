@@ -612,3 +612,77 @@ async def test_require_admin_denied_returns_envelope_authorization_error(
             "code": "authorization_error",
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_inactive_user_returns_401_envelope(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    test_user: dict[str, Any],
+    db_session: AsyncSession,
+) -> None:
+    """inactive user 의 보호 엔드포인트 요청 → 401 envelope + WWW-Authenticate.
+
+    PR #50 회귀 가드: HTTPException(400) → AuthenticationException(401) 전환.
+    토큰은 활성 시점 발급, 이후 is_active=False 로 deactivate (운영 시나리오:
+    토큰 만료 전에 운영자가 계정을 비활성화한 경우).
+    """
+    from app.user.models import UserModel
+
+    # Arrange: 활성 시점에 발급된 토큰을 가진 사용자를 deactivate
+    db_user = await db_session.get(UserModel, test_user["id"])
+    assert db_user is not None
+    db_user.is_active = False
+    await db_session.commit()
+
+    # Act: 보호 엔드포인트 요청
+    response = await client.get("/api/v1/users/me", headers=auth_headers)
+
+    # Assert: 401 + envelope + WWW-Authenticate Bearer
+    assert response.status_code == 401
+    assert response.json() == {
+        "detail": {
+            "message": "Inactive user account",
+            "code": "authentication_error",
+        }
+    }
+    assert response.headers.get("WWW-Authenticate") == "Bearer"
+
+
+@pytest.mark.asyncio
+async def test_inactive_user_message_differs_from_credentials_fail(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    test_user: dict[str, Any],
+    db_session: AsyncSession,
+) -> None:
+    """inactive vs 토큰 무효 — 같은 code 내에서 message 분기 가능 회귀 가드.
+
+    PR #50: 클라이언트가 재활성화 안내 vs 재로그인 안내를 분기할 수 있도록
+    message 차별화 (code 는 동일하게 'authentication_error').
+    """
+    from app.user.models import UserModel
+
+    # Case 1: inactive user
+    db_user = await db_session.get(UserModel, test_user["id"])
+    assert db_user is not None
+    db_user.is_active = False
+    await db_session.commit()
+
+    response_inactive = await client.get("/api/v1/users/me", headers=auth_headers)
+    assert response_inactive.status_code == 401
+    inactive_body = response_inactive.json()["detail"]
+
+    # Case 2: 잘못된 토큰
+    response_invalid = await client.get(
+        "/api/v1/users/me", headers={"Authorization": "Bearer invalid_token"}
+    )
+    assert response_invalid.status_code == 401
+    invalid_body = response_invalid.json()["detail"]
+
+    # Assert: 같은 code, 다른 message
+    assert inactive_body["code"] == "authentication_error"
+    assert invalid_body["code"] == "authentication_error"
+    assert inactive_body["message"] == "Inactive user account"
+    assert invalid_body["message"] == "Could not validate credentials"
+    assert inactive_body["message"] != invalid_body["message"]
