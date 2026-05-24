@@ -22,6 +22,7 @@ from loguru import logger
 from app.core.config import settings
 from app.core.context import get_request_id
 from app.core.exceptions import (
+    AppException,
     AuthorizationException,
     NotFoundException,
     ValidationException,
@@ -87,6 +88,18 @@ def _raise_http_403() -> None:
     raise HTTPException(status_code=403, detail="Forbidden")
 
 
+class _UnregisteredException(AppException):
+    """PR #45 회귀 전용 — register_exception_handlers 에 명시 등록 안 됨."""
+
+    def __init__(self, message: str = "unregistered") -> None:
+        super().__init__(message=message, code="unregistered_test")
+
+
+def _raise_unregistered() -> None:
+    """PR #45 회귀 — AppException 서브 등록 누락 시 fallback handler 검증."""
+    raise _UnregisteredException("test fallback")
+
+
 @pytest.fixture(autouse=True, scope="module")
 def _probe_routes() -> Iterator[None]:
     """테스트용 임시 라우트 2개를 등록 + 모듈 종료 시 제거.
@@ -103,6 +116,9 @@ def _probe_routes() -> Iterator[None]:
     test_router.add_api_route("/__test_raise_403", _raise_forbidden, methods=["GET"])
     test_router.add_api_route("/__test_http_401", _raise_http_401, methods=["GET"])
     test_router.add_api_route("/__test_http_403", _raise_http_403, methods=["GET"])
+    test_router.add_api_route(
+        "/__test_unregistered", _raise_unregistered, methods=["GET"]
+    )
     app.include_router(test_router)
 
     yield
@@ -117,6 +133,7 @@ def _probe_routes() -> Iterator[None]:
         "/__test_raise_403",
         "/__test_http_401",
         "/__test_http_403",
+        "/__test_unregistered",
     )
     app.router.routes = [
         r for r in app.router.routes if getattr(r, "path", None) not in _test_paths
@@ -546,3 +563,34 @@ async def test_request_validation_error_keeps_fastapi_default(
     # 각 항목은 loc/msg/type 키 보유
     assert "loc" in body["detail"][0]
     assert "msg" in body["detail"][0]
+
+
+# ---------------------------------------------------------------------------
+# AppException 슈퍼 fallback (PR #45) — 등록 누락된 서브클래스 안전망
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_app_exception_fallback_handler_returns_envelope_500(
+    client: AsyncClient, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """등록 누락된 AppException 서브 → 500 envelope + logger.exception.
+
+    회귀 가드: register_exception_handlers 에서 AppException 슈퍼 등록 제거 시
+    이 테스트가 깨짐 (ServerErrorMiddleware 의 plain text 500 으로 회귀).
+    """
+    setup_logging()
+    response = await client.get("/__test_unregistered")
+    assert response.status_code == 500
+    assert response.json() == {
+        "detail": {
+            "message": "test fallback",
+            "code": "unregistered_test",
+        }
+    }
+    # 운영 가시성: 등록 누락 시그널 로그
+    captured = capfd.readouterr()
+    assert "AppException 등록 누락" in captured.err, (
+        f"등록 누락 시그널 로그 누락. 실제 stderr:\n{captured.err}"
+    )
+    assert "_UnregisteredException" in captured.err
