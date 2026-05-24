@@ -5,6 +5,7 @@
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from loguru import logger
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -120,6 +121,31 @@ async def _http_exception_handler(request: Request, exc: Exception) -> JSONRespo
     )
 
 
+async def _request_validation_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """RequestValidationError (422) → envelope 응답 변환 (PR #48).
+
+    응답 형식: {"detail": {"message", "code": "request_validation_error", "errors": [...]}}
+    field별 errors 보존 (loc/msg/type). raw `input` 은 PII 차단으로 제외.
+    """
+    assert isinstance(exc, RequestValidationError)
+    errors = [
+        {"loc": list(e["loc"]), "msg": e["msg"], "type": e["type"]}
+        for e in exc.errors()
+    ]
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": {
+                "message": "Validation error",
+                "code": "request_validation_error",
+                "errors": errors,
+            }
+        },
+    )
+
+
 async def _app_exception_fallback_handler(
     request: Request, exc: Exception
 ) -> JSONResponse:
@@ -169,5 +195,9 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(AuthorizationException, _make_handler(403))
     # HTTPException (starlette 등록 → FastAPI HTTPException 자동 catch 서브클래스)
     app.add_exception_handler(StarletteHTTPException, _http_exception_handler)
+    # PR #48: RequestValidationError (422) 도 envelope 일관 적용
+    app.add_exception_handler(
+        RequestValidationError, _request_validation_exception_handler
+    )
     # PR #45: AppException 슈퍼 fallback — 등록 누락된 서브클래스 안전망 (500 + log)
     app.add_exception_handler(AppException, _app_exception_fallback_handler)
