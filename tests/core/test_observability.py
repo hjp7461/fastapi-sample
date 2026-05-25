@@ -17,7 +17,7 @@ from loguru import logger
 from sentry_sdk.envelope import Envelope
 from sentry_sdk.transport import Transport
 
-from app.core.context import request_id_var
+from app.core.context import request_id_var, user_id_var
 from app.core.observability import _before_send, _redact_pii
 
 
@@ -113,6 +113,41 @@ def test_request_id_tag_attached(sentry_isolated: _MockTransport) -> None:
     events = sentry_isolated.events()
     assert events, "capture_message 호출이 event 1건을 만들어야 함"
     assert events[-1]["tags"]["request_id"] == "test-rid-abc123"
+
+
+def test_user_id_tag_attached_when_authenticated(
+    sentry_isolated: _MockTransport,
+) -> None:
+    """A3 (PR #73): before_send 가 인증된 요청의 user_id 를 tags 에 stringify 첨부."""
+    rid_token = request_id_var.set("rid-with-user")
+    uid_token = user_id_var.set(42)
+    try:
+        sentry_sdk.capture_message("probe-with-user")
+        sentry_sdk.flush(timeout=2)
+    finally:
+        request_id_var.reset(rid_token)
+        user_id_var.reset(uid_token)
+
+    events = sentry_isolated.events()
+    assert events, "capture_message 호출이 event 1건을 만들어야 함"
+    assert events[-1]["tags"]["user_id"] == "42"
+
+
+def test_user_id_tag_omitted_when_anonymous(
+    sentry_isolated: _MockTransport,
+) -> None:
+    """A3 (PR #73): user_id_var=None (anonymous) 시 user_id tag omit."""
+    rid_token = request_id_var.set("rid-anonymous")
+    # user_id_var 는 default None (set 안 함)
+    try:
+        sentry_sdk.capture_message("probe-anonymous")
+        sentry_sdk.flush(timeout=2)
+    finally:
+        request_id_var.reset(rid_token)
+
+    events = sentry_isolated.events()
+    assert events, "capture_message 호출이 event 1건을 만들어야 함"
+    assert "user_id" not in events[-1]["tags"]
 
 
 def test_pii_redacted_in_event(sentry_isolated: _MockTransport) -> None:

@@ -17,7 +17,7 @@ from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 from starlette.types import ASGIApp
 
-from app.core.context import request_id_var
+from app.core.context import get_user_id, request_id_var
 from app.core.datetime import format_iso_z, utcnow_aware
 
 HEADER_NAME = "X-Request-ID"
@@ -129,29 +129,41 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
 OAUTH2_EXCEPTION_PATHS = frozenset({"/api/v1/users/token"})
 
 
-def _build_system_meta() -> dict[str, str]:
-    """시스템 meta (requested_at + request_id) 생성 (본 PR).
+def _build_system_meta(request: Request | None = None) -> dict[str, str]:
+    """시스템 meta (requested_at + request_id + user_id) 생성.
 
-    - `requested_at`: 항상 노출 (UTC ISO8601, `+00:00` suffix).
+    - `requested_at`: 항상 노출 (UTC ISO8601, `Z` 접미사 — PR #72 `format_iso_z`).
     - `request_id`: `request_id_var` contextvar 값. 기본값 `"-"` (요청 외
       컨텍스트 placeholder) 또는 빈 문자열이면 omit — JSON 노이즈 회피.
-      RequestIDMiddleware 가 설정한 정상 ID 만 응답 meta 에 노출.
+      RequestIDMiddleware (outer middleware) 가 set/reset.
+    - `user_id`: A3 (PR #73) — 인증된 요청에만 노출 (stringify). anonymous 요청은
+      omit. **이중 채널** — 우선 contextvar 시도 (route task 내 호출 케이스),
+      미설정 시 `request.state.user_id` fallback (BaseHTTPMiddleware 의 inner
+      task isolation 회피). `dict[str, str]` 시그니처 보존.
     """
     meta: dict[str, str] = {"requested_at": format_iso_z(utcnow_aware())}
     request_id = request_id_var.get()
     if request_id and request_id != "-":
         meta["request_id"] = request_id
+    user_id: int | None = get_user_id()
+    if user_id is None and request is not None:
+        user_id = getattr(request.state, "user_id", None)
+    if user_id is not None:
+        meta["user_id"] = str(user_id)
     return meta
 
 
-def _inject_system_meta(body: dict[str, Any]) -> dict[str, Any]:
+def _inject_system_meta(
+    body: dict[str, Any], request: Request | None = None
+) -> dict[str, Any]:
     """이미 envelope 인 응답의 meta 에 시스템 필드 주입 (본 PR).
 
     - meta dict 존재 시 `setdefault` → 기존 키 (pagination 등) 보호.
     - meta 가 없으면 신규 dict 추가.
     - body 는 in-place 갱신 후 그대로 반환.
+    - A3 (PR #73): request 전달 시 `request.state.user_id` fallback 활용.
     """
-    system_meta = _build_system_meta()
+    system_meta = _build_system_meta(request)
     existing_meta = body.get("meta")
     if isinstance(existing_meta, dict):
         for key, value in system_meta.items():
@@ -221,10 +233,10 @@ class SuccessEnvelopeMiddleware(BaseHTTPMiddleware):
         # 이중 wrap 은 회피하고, 본 PR 시스템 meta 만 setdefault 로 union.
         # pagination meta envelope ({data, meta}) 의 기존 키 보호.
         if isinstance(payload, dict) and "data" in payload:
-            payload = _inject_system_meta(payload)
+            payload = _inject_system_meta(payload, request)
         else:
             # 단일 객체 응답: envelope wrap + system meta 주입
-            payload = {"data": payload, "meta": _build_system_meta()}
+            payload = {"data": payload, "meta": _build_system_meta(request)}
 
         wrapped = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         # content-length / content-type 은 starlette Response 가 재계산

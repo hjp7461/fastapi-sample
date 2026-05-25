@@ -16,7 +16,7 @@ from typing import Any
 from loguru import logger
 
 from app.core.config import settings
-from app.core.context import get_request_id
+from app.core.context import get_request_id, get_user_id
 
 
 class InterceptHandler(logging.Handler):
@@ -56,6 +56,7 @@ _TEXT_FORMAT = (
     "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
     "<level>{level: <8}</level> | "
     "<cyan>{extra[request_id]}</cyan> | "
+    "<cyan>{extra[user_id]}</cyan> | "
     "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
     "<level>{message}</level>"
 )
@@ -64,13 +65,16 @@ _JSON_FORMAT = "{message}"
 
 
 def _inject_request_id(record: Any) -> None:
-    """모든 로그 record 의 extra 에 현재 request_id 첨부.
+    """모든 로그 record 의 extra 에 현재 request_id / user_id 첨부.
 
     `logger.configure(patcher=...)` 로 등록되어 sink 도달 전에 호출된다.
     record 는 loguru 의 내부 Record (dict-like) — 외부에 노출되지 않아 `Any` 로 둔다.
-    요청 컨텍스트 밖에서는 default "-" 가 들어간다 (`context.py` 참고).
+    요청 컨텍스트 밖에서는 request_id default "-" + user_id 는 anonymous "-".
+    A3 (PR #73): user_id 자동 첨부 (None → "-" 치환 — text 포맷 가독성).
     """
     record["extra"]["request_id"] = get_request_id()
+    user_id = get_user_id()
+    record["extra"]["user_id"] = str(user_id) if user_id is not None else "-"
 
 
 def setup_logging() -> None:

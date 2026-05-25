@@ -918,3 +918,57 @@ def test_meta_omits_request_id_when_contextvar_unset() -> None:
         assert "request_id" not in meta
     finally:
         request_id_var.reset(token)
+
+
+# ---------------------------------------------------------------------------
+# A3 (PR #73) — user_id contextvar 응답 meta 자동 첨부 회귀 가드
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_authenticated_request_meta_includes_user_id(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    test_user: dict[str, Any],
+) -> None:
+    """A3 (PR #73): 인증된 요청 응답 meta 에 user_id 노출 (stringify).
+
+    `get_current_user` 가 user_id_var.set(user.id) → middleware
+    `_build_system_meta` 가 자동 첨부. 클라이언트가 본인 요청 식별 가능.
+    """
+    response = await client.get("/api/v1/users/me", headers=auth_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert "meta" in body
+    assert body["meta"]["user_id"] == str(test_user["id"])
+
+
+@pytest.mark.asyncio
+async def test_anonymous_request_meta_omits_user_id(client: AsyncClient) -> None:
+    """A3 (PR #73): 익명 요청 응답 meta 에 user_id 부재.
+
+    `user_id_var` default None → `_build_system_meta` 가 omit (JSON 노이즈 회피).
+    """
+    response = await client.get("/")
+    assert response.status_code == 200
+    body = response.json()
+    assert "meta" in body
+    assert "user_id" not in body["meta"]
+
+
+def test_meta_omits_user_id_when_contextvar_unset() -> None:
+    """A3 (PR #73): user_id_var=None 시 meta 에서 user_id omit (unit)."""
+    from app.core.context import user_id_var
+    from app.core.middleware import _build_system_meta
+
+    # default None — set 안 함
+    meta = _build_system_meta()
+    assert "user_id" not in meta
+
+    # 명시적 set 시 노출
+    token = user_id_var.set(123)
+    try:
+        meta = _build_system_meta()
+        assert meta["user_id"] == "123"
+    finally:
+        user_id_var.reset(token)

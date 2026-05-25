@@ -22,7 +22,7 @@ from sentry_sdk.integrations.starlette import StarletteIntegration
 from sentry_sdk.types import Event, Hint
 
 from app.core.config import settings
-from app.core.context import get_request_id
+from app.core.context import get_request_id, get_user_id
 
 # 도메인 PII 필드 — event 의 dict 트리 walk 시 redact 대상.
 # User/Product 모델 확장 시 본 frozenset 만 갱신 (단일 진실원).
@@ -64,6 +64,11 @@ def _before_send(event: Event, _hint: Hint) -> Event | None:
         tags = redacted.setdefault("tags", {})
         if isinstance(tags, dict):
             tags["request_id"] = get_request_id()
+            # A3 (PR #73) — 인증된 요청에만 user_id tag 첨부. anonymous 는 omit.
+            # Sentry tag value 는 string 만 허용 — str() 변환 명시.
+            user_id = get_user_id()
+            if user_id is not None:
+                tags["user_id"] = str(user_id)
         return cast(Event, redacted)
     return event
 
