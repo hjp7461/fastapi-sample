@@ -34,17 +34,18 @@ repos:
       - id: check-yaml
       - id: check-merge-conflict
 
-  # mypy 는 import 추적이 필요해 pass_filenames=false 로 app/ tests/ 전체 검사.
+  # mypy 는 import 추적이 필요해 pass_filenames=false 로 app/ tests/ scripts/ 전체 검사.
   # local + language: system + uv run 패턴으로 venv 의 mypy 직접 사용
   # (additional_dependencies 격리 venv 불필요, mypy 캐시 활용).
   # --no-sync: `uv run` 의 venv sync 단계 건너뛰기. uv 0.11.x 가 sync 시점에
   # lockfile 의 [options] 자동 추가/제거하는 동작이 CI 와 drift 발생 (PR #48).
   # CI 의 `uv sync --frozen` 가 본 hook 실행 전 venv 보장.
+  # scripts/ 포함 (PR #N: SDK CI 통합) — export_openapi.py 등 자동 가드.
   - repo: local
     hooks:
       - id: mypy
         name: mypy
-        entry: uv run --no-sync mypy app/ tests/
+        entry: uv run --no-sync mypy app/ tests/ scripts/
         language: system
         pass_filenames: false
         types: [python]

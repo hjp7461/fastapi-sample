@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   check:
-    name: lint + type + test + alembic
+    name: lint + type + test + alembic + sdk
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -46,7 +46,7 @@ jobs:
           key: mypy-${{ runner.os }}-${{ hashFiles('uv.lock', 'pyproject.toml') }}
           restore-keys: mypy-${{ runner.os }}-
 
-      - name: pre-commit (ruff + 위생 hooks + mypy app/ tests/)
+      - name: pre-commit (ruff + 위생 hooks + mypy app/ tests/ scripts/)
         # --no-sync: uv 0.11.x 가 `uv run` 의 sync 단계에서 lockfile 의
         # [options]/exclude-newer 자동 추가/제거 → CI cache 와 drift (PR #48).
         # 직전 step 의 `uv sync --frozen` 가 venv 보장.
@@ -62,3 +62,37 @@ jobs:
           uv run alembic upgrade head
           uv run alembic downgrade base
           rm -f _ci.db
+
+      # --- PR #N: SDK CI 통합 (typescript-fetch dry-run) ---
+      # OpenAPI schema 결함 (예: $ref cycle / 예약어 operationId / generator 거부
+      # 타입 조합) 을 외부 클라이언트 도입 시점이 아닌 결함 유발 PR 에서 즉시 차단.
+      # 검증 깊이: dry-run (SDK 생성 + tsc --noEmit, runtime 실행 / e2e 없음).
+      - name: Export OpenAPI schema
+        run: uv run --no-sync python scripts/export_openapi.py
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache openapi-generator-cli jar
+        uses: actions/cache@v4
+        with:
+          path: ~/.openapi-generator
+          key: openapi-generator-${{ runner.os }}-v7
+
+      - name: Generate TypeScript SDK (typescript-fetch)
+        # `npmName` 추가 속성으로 package.json + tsconfig.json 동시 생성
+        # (이후 step 의 `npm install + tsc --noEmit` 가 동작하도록).
+        run: |
+          npx --yes @openapitools/openapi-generator-cli generate \
+            -i openapi.json \
+            -g typescript-fetch \
+            -o /tmp/sdk \
+            --additional-properties=npmName=@fastapi-sample/sdk,npmVersion=0.0.1,supportsES6=true
+
+      - name: Compile SDK (dry-run, tsc --noEmit)
+        working-directory: /tmp/sdk
+        run: |
+          npm install --silent
+          npx tsc --noEmit
