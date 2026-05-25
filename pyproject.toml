@@ -95,9 +95,11 @@ ignore_missing_imports = true
 
 # sqlmodel/sqlalchemy stub 한계 — repository 의 select().where(Model.f == v)
 # 비교가 bool 로 추론되어 arg-type 위반 다수. 코드는 정확. stub 개선 시 제거.
+# PR #66: SORT_COLUMN_MAP 의 Model.f attribute 가 dict 값 위치에서 ColumnElement
+# 로 추론 안 됨 (dict-item) + scalar_one() 반환 Any (no-any-return) 동일 한계.
 [[tool.mypy.overrides]]
 module = ["app.user.repository", "app.product.repository"]
-disable_error_code = ["arg-type"]
+disable_error_code = ["arg-type", "dict-item", "no-any-return"]
 
 [tool.pytest.ini_options]
 addopts = [

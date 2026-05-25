@@ -817,3 +817,89 @@ async def test_list_products_default_limit_independent_from_user(
     assert users.status_code == 200
     assert products.json()["meta"]["limit"] == 20
     assert users.json()["meta"]["limit"] == 50
+
+
+# ---------------------------------------------------------------------------
+# PR #66: filter / sort 표준화 (Stripe 스타일) 회귀 가드
+# ---------------------------------------------------------------------------
+
+
+async def _seed_priced_products(db_session: AsyncSession) -> None:
+    """Product sort/q 회귀 가드용 seed.
+
+    가격 순 sort DESC 검증을 위해 명확히 차등화된 가격 3건 + q 매칭용 1건.
+    """
+    from app.product.domain import ProductCategory
+    from app.product.models import ProductModel
+
+    items = [
+        ProductModel(
+            name="cheap-pencil",
+            description="저렴한 연필",
+            price=Decimal("1.00"),
+            category=ProductCategory.OTHER,
+            inventory=100,
+            is_active=True,
+        ),
+        ProductModel(
+            name="mid-notebook",
+            description="중간가 노트북 (학용품)",
+            price=Decimal("50.00"),
+            category=ProductCategory.OTHER,
+            inventory=50,
+            is_active=True,
+        ),
+        ProductModel(
+            name="premium-phone",
+            description="프리미엄 phone — 최고급형",
+            price=Decimal("9999.99"),
+            category=ProductCategory.ELECTRONICS,
+            inventory=5,
+            is_active=True,
+        ),
+    ]
+    for p in items:
+        db_session.add(p)
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_list_products_sort_desc_price(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR #66 §5.7 #3: ?sort=-price → price DESC."""
+    await _seed_priced_products(db_session)
+    response = await client.get("/api/v1/products/?sort=-price&limit=1000")
+    assert response.status_code == 200
+    items = response.json()["data"]
+    assert len(items) >= 3
+    # price 가 단조 감소 (DESC) — Decimal 문자열 비교 대신 float 비교
+    prices = [float(p["price"]) for p in items]
+    assert prices == sorted(prices, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_list_products_q_matches_description(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR #66 §5.7 #16 (선택): q 가 description 도 매칭."""
+    await _seed_priced_products(db_session)
+    # "프리미엄" 은 premium-phone 의 description 에만 포함
+    response = await client.get("/api/v1/products/?q=프리미엄&limit=1000")
+    assert response.status_code == 200
+    items = response.json()["data"]
+    assert len(items) == 1
+    assert items[0]["name"] == "premium-phone"
+
+
+@pytest.mark.asyncio
+async def test_list_products_sort_whitelist_rejects_invalid(
+    client: AsyncClient,
+) -> None:
+    """PR #66: ?sort=hidden_field → 422 envelope (화이트리스트 외)."""
+    response = await client.get("/api/v1/products/?sort=hidden_field")
+    assert response.status_code == 422
+    detail_str = str(response.json())
+    assert "허용되지 않는 정렬 필드" in detail_str

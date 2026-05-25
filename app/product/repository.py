@@ -7,12 +7,15 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import ColumnElement, Select
 
 from app.core.result import CrudOutcome, CrudResult
-from app.product.domain import NewProduct, Product, ProductCategory
+from app.core.sort import SortField, escape_like_pattern
+from app.product.domain import NewProduct, Product
 from app.product.models import ProductModel
+from app.product.schemas import ProductListFilters
 
 
 class InventoryUpdateOutcome(Enum):
@@ -37,6 +40,38 @@ class InventoryUpdateResult:
 
     outcome: InventoryUpdateOutcome
     product: Product | None = None
+
+
+# router 의 `_PRODUCT_SORT_FIELDS` 화이트리스트와 1:1 대응 (수동 동기화).
+_PRODUCT_SORT_COLUMN_MAP: dict[str, ColumnElement[Any]] = {
+    "id": ProductModel.id,
+    "name": ProductModel.name,
+    "price": ProductModel.price,
+    "created_at": ProductModel.created_at,
+    "inventory": ProductModel.inventory,
+}
+
+
+def _apply_product_filters(
+    query: Select[Any], filters: ProductListFilters
+) -> Select[Any]:
+    """list / count 공통 필터 적용 (PR #66).
+
+    q 검색 대상: name, description (DB 컬럼).
+    """
+    if filters.category is not None:
+        query = query.where(ProductModel.category == filters.category)
+    if filters.is_active is not None:
+        query = query.where(ProductModel.is_active == filters.is_active)
+    if filters.q is not None:
+        pattern = f"%{escape_like_pattern(filters.q)}%"
+        query = query.where(
+            or_(
+                func.lower(ProductModel.name).like(pattern, escape="\\"),
+                func.lower(ProductModel.description).like(pattern, escape="\\"),
+            )
+        )
+    return query
 
 
 class ProductRepository:
@@ -113,35 +148,31 @@ class ProductRepository:
         self,
         skip: int = 0,
         limit: int = 100,
-        category: ProductCategory | None = None,
-        is_active: bool | None = None,
+        filters: ProductListFilters | None = None,
+        sort: list[SortField] | None = None,
     ) -> list[Product]:
-        """상품 목록을 조회합니다."""
-        query = select(ProductModel)
+        """상품 목록을 조회합니다 (PR #66: filter/sort 표준화).
 
-        # 필터 적용
-        if category:
-            query = query.where(ProductModel.category == category)
-        if is_active is not None:
-            query = query.where(ProductModel.is_active == is_active)
+        filters/sort default 시 PR #52 동작과 동일 (호환성).
+        """
+        _filters = filters if filters is not None else ProductListFilters()
+        _sort = sort if sort is not None else []
 
-        # 페이징 적용
+        query: Select[Any] = select(ProductModel)
+        query = _apply_product_filters(query, _filters)
+        for sf in _sort:
+            col = _PRODUCT_SORT_COLUMN_MAP[sf.field]
+            query = query.order_by(col.desc() if sf.descending else col.asc())
         query = query.offset(skip).limit(limit)
 
         result = await self.session.execute(query)
         return [self._to_domain(product) for product in result.scalars().all()]
 
-    async def count(
-        self,
-        category: ProductCategory | None = None,
-        is_active: bool | None = None,
-    ) -> int:
-        """필터 적용 후 상품 수 — pagination meta 의 total (PR #52)."""
-        query = select(func.count()).select_from(ProductModel)
-        if category:
-            query = query.where(ProductModel.category == category)
-        if is_active is not None:
-            query = query.where(ProductModel.is_active == is_active)
+    async def count(self, filters: ProductListFilters | None = None) -> int:
+        """필터 적용 후 상품 수 — pagination meta 의 total (PR #52/#66)."""
+        _filters = filters if filters is not None else ProductListFilters()
+        query: Select[Any] = select(func.count()).select_from(ProductModel)
+        query = _apply_product_filters(query, _filters)
         result = await self.session.execute(query)
         return result.scalar_one()
 

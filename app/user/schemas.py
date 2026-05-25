@@ -2,6 +2,7 @@
 사용자 관련 Pydantic 모델 (요청/응답 스키마).
 """
 
+from dataclasses import dataclass
 from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field, ValidationInfo, field_validator
@@ -9,6 +10,20 @@ from pydantic import BaseModel, EmailStr, Field, ValidationInfo, field_validator
 from app.core.config import settings
 from app.user.domain import User, UserRole
 from app.user.masking import mask_email
+
+
+@dataclass(frozen=True)
+class UserListFilters:
+    """User 리스트 필터 표면 (PR #66: filter/sort 표준화).
+
+    service / repository 시그니처가 인자 폭증하지 않도록 dataclass 로 묶는다.
+    schemas.py 에 위치한 이유: repository ↔ service 순환 import 회피
+    (repository 가 service 의 dataclass 를 직접 import 가능).
+    """
+
+    role: UserRole | None = None
+    is_active: bool | None = None
+    q: str | None = None
 
 
 class UserBase(BaseModel):

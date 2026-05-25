@@ -9,6 +9,8 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.user.domain import UserRole
+
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_create_user(client: AsyncClient) -> None:
@@ -971,3 +973,315 @@ async def test_list_users_limit_over_max_returns_422_envelope(
     body = response.json()
     assert "detail" in body
     assert body["detail"]["code"] == "http_422"
+
+
+# ---------------------------------------------------------------------------
+# PR #66: filter / sort 표준화 (Stripe 스타일) 회귀 가드
+# ---------------------------------------------------------------------------
+
+
+async def _seed_extra_users(db_session: AsyncSession) -> None:
+    """User filter/sort 회귀 가드용 seed.
+
+    - admin / staff / customer 각 1명 이상 (역할 필터 검증).
+    - email/username/first_name 에 'foo' 포함 사용자 (q 검색 검증).
+    - admin 추가 2명 (count.total 회귀 가드 — admin 합계 검증).
+    """
+    from app.core.security import get_password_hash
+    from app.user.models import UserModel
+
+    password_hash = get_password_hash("seedpassword")
+    seeded = [
+        UserModel(
+            email="foo.alpha@example.com",
+            username="foo_alpha",
+            hashed_password=password_hash,
+            first_name="Foo",
+            last_name="Alpha",
+            role=UserRole.CUSTOMER,
+            is_active=True,
+        ),
+        UserModel(
+            email="bravo@example.com",
+            username="bravo",
+            hashed_password=password_hash,
+            first_name="Bravo",
+            last_name="Two",
+            role=UserRole.STAFF,
+            is_active=True,
+        ),
+        UserModel(
+            email="charlie.admin@example.com",
+            username="charlie_admin",
+            hashed_password=password_hash,
+            first_name="Charlie",
+            last_name="Admin",
+            role=UserRole.ADMIN,
+            is_active=True,
+        ),
+        UserModel(
+            email="delta.admin@example.com",
+            username="delta_admin",
+            hashed_password=password_hash,
+            first_name="Delta",
+            last_name="Admin",
+            role=UserRole.ADMIN,
+            is_active=False,
+        ),
+    ]
+    for u in seeded:
+        db_session.add(u)
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_list_users_sort_single_ascending(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """PR #66 §5.7 #1: ?sort=email → email ASC 정렬."""
+    await _seed_extra_users(db_session)
+    response = await client.get(
+        "/api/v1/users/?sort=email&limit=1000", headers=admin_auth_headers
+    )
+    assert response.status_code == 200
+    items = response.json()["data"]
+    usernames = [u["username"] for u in items]
+    # email 은 응답에 없지만 ASC 정렬이 적용됐는지 username 으로 간접 검증 불가
+    # → 별도로 admin 권한으로 GET /users/{id} 한 명만 확인하는 대신,
+    # id 가 email ASC 순서를 따르도록 seed 순서와 결과 순서 일치를 검증한다.
+    # seed: admin(test) → foo_alpha → bravo → charlie_admin → delta_admin
+    # email ASC: admin@ → bravo@ → charlie@ → delta@ → foo.alpha@
+    assert usernames[0] == "adminuser"  # admin@example.com 이 최선
+    assert usernames.index("bravo") < usernames.index("charlie_admin")
+    assert usernames.index("charlie_admin") < usernames.index("delta_admin")
+    assert usernames.index("delta_admin") < usernames.index("foo_alpha")
+
+
+@pytest.mark.asyncio
+async def test_list_users_sort_multi_role_then_created_desc(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """PR #66 §5.7 #2: ?sort=role,-created_at → role ASC + role 내 created_at DESC."""
+    await _seed_extra_users(db_session)
+    response = await client.get(
+        "/api/v1/users/?sort=role,-created_at&limit=1000",
+        headers=admin_auth_headers,
+    )
+    assert response.status_code == 200
+    rows = response.json()["data"]
+    assert len(rows) >= 4
+    # role 별 그룹 내 created_at DESC 검증 (role 변경 지점에서는 role 단조 증가)
+    for i in range(len(rows) - 1):
+        if rows[i]["role"] == rows[i + 1]["role"]:
+            assert rows[i]["created_at"] >= rows[i + 1]["created_at"]
+        else:
+            assert rows[i]["role"] <= rows[i + 1]["role"]
+
+
+@pytest.mark.asyncio
+async def test_list_users_sort_whitelist_rejects_password_hash(
+    client: AsyncClient, admin_auth_headers: dict[str, str]
+) -> None:
+    """PR #66 §5.7 #4: ?sort=password_hash → 422 envelope (화이트리스트 외)."""
+    response = await client.get(
+        "/api/v1/users/?sort=password_hash", headers=admin_auth_headers
+    )
+    assert response.status_code == 422
+    body = response.json()
+    detail_str = str(body)
+    assert "허용되지 않는 정렬 필드" in detail_str
+    assert "password_hash" in detail_str
+
+
+@pytest.mark.asyncio
+async def test_list_users_filter_role(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """PR #66 §5.7 #7: ?role=admin → role=admin 만 반환."""
+    await _seed_extra_users(db_session)
+    response = await client.get(
+        "/api/v1/users/?role=admin&limit=1000", headers=admin_auth_headers
+    )
+    assert response.status_code == 200
+    items = response.json()["data"]
+    assert all(u["role"] == "admin" for u in items)
+    # 합계 3 = conftest 의 adminuser + seed 의 charlie_admin + delta_admin.
+    assert len(items) == 3
+
+
+@pytest.mark.asyncio
+async def test_list_users_filter_combination_role_and_is_active(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """PR #66 §5.7 #8: ?role=admin&is_active=true → 양쪽 AND."""
+    await _seed_extra_users(db_session)
+    response = await client.get(
+        "/api/v1/users/?role=admin&is_active=true&limit=1000",
+        headers=admin_auth_headers,
+    )
+    assert response.status_code == 200
+    items = response.json()["data"]
+    assert all(u["role"] == "admin" and u["is_active"] is True for u in items)
+    # admin + active: adminuser + charlie_admin (delta_admin 은 is_active=False)
+    assert len(items) == 2
+
+
+@pytest.mark.asyncio
+async def test_list_users_q_partial_match(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """PR #66 §5.7 #9: ?q=foo → email/username/first_name 에 'foo' 포함."""
+    await _seed_extra_users(db_session)
+    response = await client.get(
+        "/api/v1/users/?q=foo&limit=1000", headers=admin_auth_headers
+    )
+    assert response.status_code == 200
+    items = response.json()["data"]
+    usernames = [u["username"] for u in items]
+    # foo_alpha 가 매칭 (email=foo.alpha@..., username=foo_alpha, first_name=Foo)
+    assert "foo_alpha" in usernames
+    # 'foo' 미포함 사용자는 결과에 없음
+    assert "bravo" not in usernames
+    assert "adminuser" not in usernames
+
+
+@pytest.mark.asyncio
+async def test_list_users_q_case_insensitive(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """PR #66 §5.7 #10: ?q=FOO 와 ?q=foo 가 동일 결과 (case-insensitive)."""
+    await _seed_extra_users(db_session)
+    lower = await client.get(
+        "/api/v1/users/?q=foo&sort=id&limit=1000", headers=admin_auth_headers
+    )
+    upper = await client.get(
+        "/api/v1/users/?q=FOO&sort=id&limit=1000", headers=admin_auth_headers
+    )
+    assert lower.status_code == upper.status_code == 200
+    assert lower.json()["data"] == upper.json()["data"]
+    assert len(lower.json()["data"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_list_users_count_reflects_filter(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """PR #66 §5.7 #11: meta.total 이 filter 적용 후 카운트 (PR #52 연장)."""
+    await _seed_extra_users(db_session)
+    response = await client.get(
+        "/api/v1/users/?role=admin&limit=1000", headers=admin_auth_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    # 합계 3 = conftest 의 adminuser + seed 의 charlie_admin + delta_admin.
+    assert body["meta"]["total"] == 3
+    assert body["meta"]["total"] == len(body["data"])
+
+
+@pytest.mark.asyncio
+async def test_list_users_sort_filter_q_combo(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """PR #66 §5.7 #12: ?sort=-created_at&role=admin&q=admin 정상 동작."""
+    await _seed_extra_users(db_session)
+    response = await client.get(
+        "/api/v1/users/?sort=-created_at&role=admin&q=admin&limit=1000",
+        headers=admin_auth_headers,
+    )
+    assert response.status_code == 200
+    items = response.json()["data"]
+    # role=admin + q='admin' (charlie_admin, delta_admin 의 username/email 매칭)
+    assert all(u["role"] == "admin" for u in items)
+    # created_at DESC (단조 감소)
+    for i in range(len(items) - 1):
+        assert items[i]["created_at"] >= items[i + 1]["created_at"]
+
+
+@pytest.mark.asyncio
+async def test_list_users_pagination_with_sort_offset_mode(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """PR #66 §5.7 #13: ?skip=0&limit=2&sort=-id → 페이징 + 정렬 일관 (offset).
+
+    PR #64 의 page 듀얼 모드 + PR #66 sort/filter 조합 회귀 가드 — sort 가
+    페이징과 함께 정상 적용되는지 검증 (PLAN §6 후속 의존 가드).
+    """
+    await _seed_extra_users(db_session)
+    response = await client.get(
+        "/api/v1/users/?skip=0&limit=2&sort=-id", headers=admin_auth_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    items = body["data"]
+    assert len(items) == 2
+    # id DESC — 가장 최근 두 명 (delta, charlie 순)
+    assert items[0]["id"] > items[1]["id"]
+    # offset 모드 meta 형식 유지 (page 듀얼 호환 회귀)
+    # PR #66 (response meta) 의 requested_at/request_id 자동 주입 허용 → subset 검증
+    assert {"total", "skip", "limit"}.issubset(body["meta"].keys())
+    assert "page" not in body["meta"]  # offset 모드 → page 키 누수 방지
+
+
+@pytest.mark.asyncio
+async def test_list_users_pagination_with_sort_page_mode(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """PR #66 + PR #64: ?page=1&per_page=2&sort=-id&role=admin 조합 회귀.
+
+    PR #64 page 듀얼 모드와 PR #66 sort/filter 조합이 함께 동작해야 한다 —
+    page 모드 meta 형식 유지 + sort/filter 정확 적용. PLAN §6 후속 의존 가드.
+    """
+    await _seed_extra_users(db_session)
+    response = await client.get(
+        "/api/v1/users/?page=1&per_page=2&sort=-id&role=admin",
+        headers=admin_auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    items = body["data"]
+    assert len(items) <= 2
+    assert all(u["role"] == "admin" for u in items)
+    if len(items) == 2:
+        assert items[0]["id"] > items[1]["id"]  # id DESC
+    # page 모드 meta 형식 (skip/limit 미포함)
+    # PR #66 (response meta) 의 requested_at/request_id 자동 주입 허용 → subset 검증
+    meta_keys = set(body["meta"].keys())
+    assert {"total", "page", "per_page", "total_pages"}.issubset(meta_keys)
+    assert "skip" not in meta_keys  # page 모드 → offset 키 누수 방지
+    assert body["meta"]["page"] == 1
+    assert body["meta"]["per_page"] == 2
+
+
+@pytest.mark.asyncio
+async def test_list_users_no_sort_uses_default_order(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+) -> None:
+    """PR #66 §5.7 #14: sort 누락 시 200 응답 (DB 기본 순서, ORDER BY 절 없음)."""
+    response = await client.get("/api/v1/users/?limit=10", headers=admin_auth_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert isinstance(body["data"], list)
+    # data 와 meta 만 존재 (envelope 형식 유지)
+    assert "data" in body
+    assert "meta" in body
