@@ -216,6 +216,74 @@ async def test_summary_includes_permission_keywords_for_guarded_endpoints(
                 )
 
 
+# PR #63: OpenAPI tags 세분화 (2 -> 4) -- endpoint x tag 매트릭스 + 화이트리스트.
+# 신규 endpoint 추가 시 tag 누락 / 오타 / 미허용 tag 즉시 catch (drift 가드).
+# 정책 변경 시 본 dict + ALLOWED_TAGS + app/core/openapi.py::OPENAPI_TAGS 동시 갱신.
+EXPECTED_ENDPOINT_TAGS: dict[tuple[str, str], list[str]] = {
+    # users-auth (회원가입 / 로그인 / 내 정보 조회 / 내 정보 수정)
+    ("POST", "/api/v1/users/"): ["users-auth"],
+    ("POST", "/api/v1/users/token"): ["users-auth"],
+    ("GET", "/api/v1/users/me"): ["users-auth"],
+    ("PUT", "/api/v1/users/me"): ["users-auth"],
+    # users-admin (사용자 단건 self_or_admin / 사용자 목록 admin)
+    ("GET", "/api/v1/users/{user_id}"): ["users-admin"],
+    ("GET", "/api/v1/users/"): ["users-admin"],
+    # products-public (단건 / 목록 viewer 분기)
+    ("GET", "/api/v1/products/{product_id}"): ["products-public"],
+    ("GET", "/api/v1/products/"): ["products-public"],
+    # products-admin (생성 / 수정 / 삭제 / 재고 변경)
+    ("POST", "/api/v1/products/"): ["products-admin"],
+    ("PUT", "/api/v1/products/{product_id}"): ["products-admin"],
+    ("DELETE", "/api/v1/products/{product_id}"): ["products-admin"],
+    ("PATCH", "/api/v1/products/{product_id}/inventory"): ["products-admin"],
+}
+
+ALLOWED_TAGS: frozenset[str] = frozenset(
+    {"users-auth", "users-admin", "products-public", "products-admin"}
+)
+
+
+@pytest.mark.asyncio
+async def test_endpoint_tags_match_whitelist(client: AsyncClient) -> None:
+    """전체 /api/v1/ endpoint 의 tag 가 화이트리스트 + 매트릭스와 정확 일치.
+
+    drift 가드 (PR #63):
+    - 신규 endpoint 추가 시 tag 누락 -> 본 테스트 실패
+    - 잘못된 tag 부여 (오타 'user-auth' / 기존 'users' 복귀) -> 화이트리스트 실패
+    - tag 매핑 변경 (예: self_or_admin endpoint 이동) -> 매트릭스 정확 일치 실패
+    - APIRouter default tag 복귀로 silent 부여 -> 매트릭스 실패
+
+    `/api/v1/openapi.json` 자체는 docs auto-route 라 매트릭스에서 제외.
+    """
+    response = await client.get("/api/v1/openapi.json")
+    schema = response.json()["data"]
+
+    actual: dict[tuple[str, str], list[str]] = {}
+    api_prefix = "/api/v1/"
+    for path, methods in schema["paths"].items():
+        if not path.startswith(api_prefix):
+            continue
+        # FastAPI 가 자동 생성한 openapi.json 자체는 제외
+        if path == "/api/v1/openapi.json":
+            continue
+        for method, op in methods.items():
+            if method.lower() not in {"get", "post", "put", "patch", "delete"}:
+                continue
+            tags = op.get("tags", [])
+            actual[(method.upper(), path)] = tags
+            for tag in tags:
+                assert tag in ALLOWED_TAGS, (
+                    f"{method.upper()} {path}: tag '{tag}' 는 허용되지 않음. "
+                    f"허용: {sorted(ALLOWED_TAGS)}"
+                )
+
+    assert actual == EXPECTED_ENDPOINT_TAGS, (
+        f"endpoint x tag 매트릭스 drift 감지.\n"
+        f"기대: {EXPECTED_ENDPOINT_TAGS}\n"
+        f"실제: {actual}"
+    )
+
+
 @pytest.mark.asyncio
 async def test_all_api_endpoints_have_korean_description(
     client: AsyncClient,

@@ -28,6 +28,38 @@ from app.core.openapi_status import resolve_status_codes
 T = TypeVar("T")
 
 
+# OpenAPI tags 메타데이터 (PR #63 — tags 2→4 세분화).
+# 권한 경계 기준으로 Swagger UI 그룹화 + 외부 SDK 자동 생성 namespace 분리.
+# 신규 tag 추가 시 `tests/core/test_openapi.py::ALLOWED_TAGS` 와
+# `EXPECTED_ENDPOINT_TAGS` 매트릭스 동시 갱신 필수.
+OPENAPI_TAGS: list[dict[str, str]] = [
+    {
+        "name": "users-auth",
+        "description": (
+            "공개/인증 사용자 API — 회원가입, 로그인 (OAuth2), 내 정보 조회/수정."
+        ),
+    },
+    {
+        "name": "users-admin",
+        "description": (
+            "관리자 전용 사용자 API — 사용자 단건 조회 (self_or_admin), "
+            "사용자 목록 (admin)."
+        ),
+    },
+    {
+        "name": "products-public",
+        "description": (
+            "공개 상품 조회 API — 단건/목록 (viewer 권한 분기로 "
+            "ProductResponse 또는 ProductPublicView 응답)."
+        ),
+    },
+    {
+        "name": "products-admin",
+        "description": ("staff+ 상품 변경 API — 생성, 수정, 삭제, 재고 변경."),
+    },
+]
+
+
 class SuccessEnvelope(BaseModel, Generic[T]):
     """SuccessEnvelopeMiddleware (PR #49) 가 wrap 한 success 응답 형식."""
 

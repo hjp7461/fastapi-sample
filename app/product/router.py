@@ -35,6 +35,7 @@ router = APIRouter()
         "신규 상품을 생성합니다. **staff 또는 admin** 만 접근 가능 "
         "(그 외 403 envelope). SKU 는 unique — 중복 시 409 envelope."
     ),
+    tags=["products-admin"],
 )
 async def create_product(
     product_in: ProductCreate,
@@ -55,6 +56,7 @@ async def create_product(
         "그 외 (anonymous / 일반 사용자) 는 `ProductPublicView` "
         "(inventory 제외) 로 응답 분기."
     ),
+    tags=["products-public"],
 )
 async def get_product_by_id(
     product_id: int,
@@ -83,6 +85,7 @@ async def get_product_by_id(
         "재고 (`inventory_count`) 변경은 본 endpoint 가 아닌 "
         "`/inventory` PATCH 사용 권장 (원자성)."
     ),
+    tags=["products-admin"],
 )
 async def update_product(
     product_id: int,
@@ -105,6 +108,7 @@ async def update_product(
         "접근 가능 (그 외 403 envelope). "
         "성공 시 204 No Content (응답 body 없음)."
     ),
+    tags=["products-admin"],
 )
 async def delete_product(
     product_id: int,
@@ -129,6 +133,7 @@ async def delete_product(
         "(inventory 제외). `category`, `is_active` 쿼리 파라미터로 필터링 가능. "
         "`{data, meta: {total, skip, limit}}` 형식."
     ),
+    tags=["products-public"],
 )
 async def list_products(
     skip: int = Query(0, ge=0, description="페이징 offset (0 이상)"),
@@ -169,6 +174,7 @@ async def list_products(
         "결과 재고가 음수가 되면 400 envelope. "
         "DB row lock 으로 동시성 안전."
     ),
+    tags=["products-admin"],
 )
 async def update_product_inventory(
     product_id: int,
