@@ -137,6 +137,32 @@ async def test_envelope_components_registered(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_all_api_endpoints_have_korean_summary(
+    client: AsyncClient,
+) -> None:
+    """PR #55: 모든 /api/v1/ endpoint 에 한국어 summary 명시.
+
+    영문 자동 생성 (`get_user_by_id` → `Get User By Id`) fallback 차단 —
+    신규 endpoint 추가 시 summary 누락 즉시 catch.
+    """
+    response = await client.get("/api/v1/openapi.json")
+    schema = response.json()["data"]
+    api_prefix = "/api/v1/"
+    for path, methods in schema["paths"].items():
+        if not path.startswith(api_prefix):
+            continue
+        for method, op in methods.items():
+            if method.lower() not in {"get", "post", "put", "patch", "delete"}:
+                continue
+            summary = op.get("summary", "")
+            assert summary, f"{method.upper()} {path}: summary 누락"
+            assert any("가" <= c <= "힣" for c in summary), (
+                f"{method.upper()} {path}: summary={summary!r} — "
+                "영문 자동 생성 의심, 한국어로 명시 필요"
+            )
+
+
+@pytest.mark.asyncio
 async def test_paginated_response_schema_not_double_wrapped(
     client: AsyncClient,
 ) -> None:
