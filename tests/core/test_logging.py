@@ -38,7 +38,7 @@ def test_setup_logging_text_default(capfd: pytest.CaptureFixture[str]) -> None:
 def test_setup_logging_json_format(
     monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    """LOG_FORMAT=json 시 stderr 출력이 JSON 파싱 가능 + extra.request_id 포함."""
+    """LOG_FORMAT=json 시 stderr 출력이 JSON 파싱 가능 + request_id/user_id 포함."""
     monkeypatch.setattr(settings, "LOG_FORMAT", "json")
     setup_logging()
     logger.warning("probe-json")
@@ -50,6 +50,38 @@ def test_setup_logging_json_format(
     assert data["record"]["level"]["name"] == "WARNING"
     # 요청 컨텍스트 밖에서는 default "-" 가 들어간다.
     assert data["record"]["extra"]["request_id"] == "-"
+    # A3 (PR #73) — anonymous (user_id_var default None) 일 때 patcher 가 "-" 치환
+    assert data["record"]["extra"]["user_id"] == "-"
+
+
+def test_text_format_includes_user_id_column(
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    """A3 (PR #73): text 포맷에 user_id 컬럼 자동 첨부.
+
+    `user_id_var.set(N)` 후 logger.warning 호출 → text 출력 라인에 stringify
+    user_id 노출. anonymous (set 안 함) 시 "-" placeholder.
+    """
+    from app.core.context import user_id_var
+
+    setup_logging()
+
+    # 인증 컨텍스트
+    token = user_id_var.set(777)
+    try:
+        logger.warning("probe-with-user")
+    finally:
+        user_id_var.reset(token)
+    captured = capfd.readouterr()
+    assert "777" in captured.err
+    assert "probe-with-user" in captured.err
+
+    # anonymous 컨텍스트
+    logger.warning("probe-anon")
+    captured = capfd.readouterr()
+    assert "probe-anon" in captured.err
+    # default placeholder "-" 가 user_id 컬럼에 들어감 (request_id "-" 와 함께)
+    assert " - " in captured.err
 
 
 def test_intercept_handler_routes_stdlib_to_loguru(
