@@ -18,7 +18,13 @@ from app.core.openapi_examples import (
     ERROR_404_NOT_FOUND_USER,
     ERROR_422_VALIDATION,
 )
-from app.core.pagination import build_meta, resolve_pagination
+from app.core.pagination import (
+    Pagination,
+    build_meta,
+    enforce_per_page_max,
+    resolve_pagination,
+    user_pagination_dep,
+)
 from app.di.providers import get_user_service
 from app.user.domain import User
 from app.user.schemas import (
@@ -251,18 +257,17 @@ async def get_user_by_id(
     },
 )
 async def list_users(
-    skip: int = Query(0, ge=0, description="페이징 offset (offset 모드, 0 이상)"),
-    limit: int = Query(
-        100, ge=1, le=1000, description="페이지 크기 (offset 모드, 1~1000)"
-    ),
+    paging: Pagination = Depends(user_pagination_dep),
     page: int | None = Query(
         None, ge=1, description="페이지 번호 (1-indexed, page 모드)"
     ),
     per_page: int | None = Query(
         None,
         ge=1,
-        le=1000,
-        description="페이지당 항목 수 (page 모드, 1~1000)",
+        description=(
+            "페이지당 항목 수 (page 모드, 1 이상). 상한은 LIST_MAX_LIMIT "
+            "(request 시점 평가)."
+        ),
     ),
     _: Any = Depends(require_admin),
     user_service: UserService = Depends(get_user_service),
@@ -271,13 +276,18 @@ async def list_users(
 
     응답은 `UserSummary` (PII 0건) — 목록 페이지에서 이메일/이름 무차별 노출 차단.
 
-    페이징 듀얼 모드 (PR ##):
+    페이징 듀얼 모드 (PR #64):
     - offset 모드 (default, `?skip=&limit=`): meta = {total, skip, limit}
     - page 모드 (`?page=&per_page=`): meta = {total, page, per_page, total_pages}
     - 동시 제공 시 page 우선 (skip/limit silent 무시).
+
+    limit / per_page default 와 max 는 환경 변수 (PR ##):
+    - `USER_LIST_DEFAULT_LIMIT` (default 100)
+    - `LIST_MAX_LIMIT` (default 1000, offset/page 모드 공통 상한)
     """
+    enforce_per_page_max(per_page)
     effective_skip, effective_limit, mode = resolve_pagination(
-        skip=skip, limit=limit, page=page, per_page=per_page
+        skip=paging.skip, limit=paging.limit, page=page, per_page=per_page
     )
     users, total = await user_service.list_users(
         skip=effective_skip, limit=effective_limit

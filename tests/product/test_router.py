@@ -668,12 +668,15 @@ async def test_list_products_filter_count_matches(
 
 
 @pytest.mark.parametrize(
-    ("params", "expected_status"),
+    ("params", "expected_status", "expected_code"),
     [
-        ({"skip": -1}, 422),
-        ({"limit": 0}, 422),
-        ({"limit": 1001}, 422),
-        ({"skip": 0, "limit": 1000}, 200),
+        # Pydantic Query 검증 → request_validation_error
+        ({"skip": -1}, 422, "request_validation_error"),
+        ({"limit": 0}, 422, "request_validation_error"),
+        # limit > LIST_MAX_LIMIT (default 1000) → dependency
+        # 내부 HTTPException → http_422
+        ({"limit": 1001}, 422, "http_422"),
+        ({"skip": 0, "limit": 1000}, 200, None),
     ],
 )
 @pytest.mark.asyncio
@@ -681,12 +684,14 @@ async def test_list_products_query_constraints(
     client: AsyncClient,
     params: dict[str, int],
     expected_status: int,
+    expected_code: str | None,
 ) -> None:
-    """PR #52: product 도 동일 Query 제약 (skip≥0, 1≤limit≤1000)."""
+    """PR #52 + PR ##: product 도 동일 가드 (skip≥0 / limit≥1 Pydantic,
+    limit ≤ LIST_MAX_LIMIT dependency)."""
     response = await client.get("/api/v1/products/", params=params)
     assert response.status_code == expected_status
     if expected_status == 422:
-        assert response.json()["detail"]["code"] == "request_validation_error"
+        assert response.json()["detail"]["code"] == expected_code
 
 
 @pytest.mark.asyncio
@@ -757,13 +762,16 @@ async def test_list_products_page_mode_with_category_filter(
 
 
 @pytest.mark.parametrize(
-    ("params", "expected_status"),
+    ("params", "expected_status", "expected_code"),
     [
-        ({"page": 0}, 422),
-        ({"page": -1, "per_page": 10}, 422),
-        ({"page": 1, "per_page": 0}, 422),
-        ({"page": 1, "per_page": 1001}, 422),
-        ({"page": 1, "per_page": 1000}, 200),
+        # Pydantic Query 검증 → request_validation_error
+        ({"page": 0}, 422, "request_validation_error"),
+        ({"page": -1, "per_page": 10}, 422, "request_validation_error"),
+        ({"page": 1, "per_page": 0}, 422, "request_validation_error"),
+        # per_page > LIST_MAX_LIMIT (default 1000) → enforce_per_page_max
+        # 내부 HTTPException → http_422
+        ({"page": 1, "per_page": 1001}, 422, "http_422"),
+        ({"page": 1, "per_page": 1000}, 200, None),
     ],
 )
 @pytest.mark.asyncio
@@ -771,9 +779,41 @@ async def test_list_products_page_mode_query_constraints(
     client: AsyncClient,
     params: dict[str, int],
     expected_status: int,
+    expected_code: str | None,
 ) -> None:
-    """PRD §5.6 (product): page/per_page Query 제약 회귀 가드."""
+    """PRD §5.6 (product) + PR ##: page/per_page Query 제약 + per_page ≤
+    LIST_MAX_LIMIT enforce."""
     response = await client.get("/api/v1/products/", params=params)
     assert response.status_code == expected_status
     if expected_status == 422:
-        assert response.json()["detail"]["code"] == "request_validation_error"
+        assert response.json()["detail"]["code"] == expected_code
+
+
+# --- list limit default / max 환경 변수화 회귀 가드 ---
+
+
+@pytest.mark.asyncio
+async def test_list_products_default_limit_independent_from_user(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    test_product: dict[str, Any],
+) -> None:
+    """PR ##: user / product default 가 독립 — 각 자원별 factory dependency.
+
+    `USER_LIST_DEFAULT_LIMIT=50`, `PRODUCT_LIST_DEFAULT_LIMIT=20` 설정 후
+    각 endpoint 의 meta.limit 이 자원별 값으로 분리되는지 회귀 가드
+    (factory 가 자원별 default_limit_attr 캡처 — 공유 상태 회귀 차단).
+    """
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "USER_LIST_DEFAULT_LIMIT", 50)
+    monkeypatch.setattr(settings, "PRODUCT_LIST_DEFAULT_LIMIT", 20)
+
+    products = await client.get("/api/v1/products/", headers=admin_auth_headers)
+    users = await client.get("/api/v1/users/", headers=admin_auth_headers)
+
+    assert products.status_code == 200
+    assert users.status_code == 200
+    assert products.json()["meta"]["limit"] == 20
+    assert users.json()["meta"]["limit"] == 50
