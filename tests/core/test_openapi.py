@@ -70,33 +70,29 @@ async def test_204_response_not_wrapped(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_standard_error_responses_injected(client: AsyncClient) -> None:
-    """PR #51: 모든 endpoint 에 401/403/404/400/422 envelope 응답 일괄 주입."""
+async def test_error_envelope_refs_on_full_coverage_endpoint(
+    client: AsyncClient,
+) -> None:
+    """PR #51 envelope `$ref` 형식 회귀 가드.
+
+    5종 (400/401/403/404/422) 가 모두 도출되는 `PATCH /products/{id}/inventory`
+    로 envelope 모델 참조 형식만 검증 (endpoint x status 정확 매핑은
+    `tests/core/test_openapi_endpoint_status_mapping.py` 가 전수 검증).
+    """
     response = await client.get("/api/v1/openapi.json")
     schema = response.json()["data"]
 
-    op = schema["paths"]["/api/v1/users/me"]["get"]
+    op = schema["paths"]["/api/v1/products/{product_id}/inventory"]["patch"]
     responses = op["responses"]
 
-    # 모든 표준 error status 존재 + $ref 가 envelope 모델
     for status_code in ("400", "401", "403", "404", "422"):
         assert status_code in responses, f"missing status {status_code}"
         ref = responses[status_code]["content"]["application/json"]["schema"]["$ref"]
         assert ref.startswith("#/components/schemas/"), f"status {status_code}"
 
-    # 401/403/404/400 → ErrorEnvelope, 422 → ValidationErrorEnvelope
-    assert responses["401"]["content"]["application/json"]["schema"]["$ref"].endswith(
-        "ErrorEnvelope"
-    )
-    assert responses["403"]["content"]["application/json"]["schema"]["$ref"].endswith(
-        "ErrorEnvelope"
-    )
-    assert responses["404"]["content"]["application/json"]["schema"]["$ref"].endswith(
-        "ErrorEnvelope"
-    )
-    assert responses["400"]["content"]["application/json"]["schema"]["$ref"].endswith(
-        "ErrorEnvelope"
-    )
+    for status_code in ("400", "401", "403", "404"):
+        ref = responses[status_code]["content"]["application/json"]["schema"]["$ref"]
+        assert ref.endswith("ErrorEnvelope"), f"status {status_code}"
     assert responses["422"]["content"]["application/json"]["schema"]["$ref"].endswith(
         "ValidationErrorEnvelope"
     )
