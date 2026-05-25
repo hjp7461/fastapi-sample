@@ -132,7 +132,7 @@ def test_domain_exception_default_message(
 async def test_domain_exception_handler_status_mapping(
     exc_cls: type[AppException], expected_status: int
 ) -> None:
-    """5종 도메인 예외의 status 매핑 회귀 — handler closure 의 캡처된 status_code 검증."""
+    """5종 도메인 예외의 status 매핑 회귀 — handler closure 캡처값 검증."""
     handlers = _registered_handlers()
     handler = handlers[exc_cls]
     response = await handler(None, exc_cls("test message"))
@@ -159,7 +159,7 @@ async def test_http_exception_fallback_envelope() -> None:
 
 @pytest.mark.asyncio
 async def test_http_exception_preserves_headers() -> None:
-    """HTTPException 의 headers (예: WWW-Authenticate) 가 envelope 응답에 보존 (PR #42)."""
+    """HTTPException headers (예: WWW-Authenticate) envelope 응답 보존 (PR #42)."""
     handlers = _registered_handlers()
     handler = handlers[StarletteHTTPException]
     exc = StarletteHTTPException(
@@ -178,7 +178,7 @@ async def test_http_exception_preserves_headers() -> None:
 
 @pytest.mark.asyncio
 async def test_request_validation_error_envelope_structure() -> None:
-    """422 envelope 구조: code='request_validation_error' + errors 배열 + raw input 차단."""
+    """422 envelope: code='request_validation_error' + errors 배열 + raw input 차단."""
     handlers = _registered_handlers()
     handler = handlers[RequestValidationError]
     # 실제 RequestValidationError 모사 — `input` 키는 raw body (PII 차단 대상)
