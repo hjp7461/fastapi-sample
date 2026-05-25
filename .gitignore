@@ -316,3 +316,13 @@ app.db
 # 로컬 전용 작업 문서 (PRD / PLAN / HANDOFF / diagram / RUNBOOK)
 # 기존엔 .git/info/exclude 만 사용했으나, 협업 시 정책이 명확하게 보이도록 .gitignore 로 승격.
 docs/
+
+# CI 산출물 — SDK CI 통합 (scripts/export_openapi.py 의 출력).
+# 로컬 dry-run 시에도 의도치 않은 커밋 방지. 경로 prefix `/` 로
+# repo root 의 openapi.json 만 ignore (다른 디렉터리 동명 파일은 영향 없음).
+/openapi.json
+
+# openapi-generator-cli (npm wrapper) 가 첫 호출 시 자동 생성하는 버전 pin 파일.
+# 현재 정책은 `npx --yes` latest (PRD §5.2, 별도 PR 에서 pinning).
+# 의도치 않은 커밋 방지 — 본 파일 커밋 시 버전이 사실상 pinning 되어 정책 충돌.
+/openapitools.json
