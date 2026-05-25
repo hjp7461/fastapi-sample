@@ -3,12 +3,25 @@
 API 요청 및 응답의 데이터 구조를 표현합니다.
 """
 
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
 from app.product.domain import Product, ProductCategory
+
+
+@dataclass(frozen=True)
+class ProductListFilters:
+    """Product 리스트 필터 표면 (PR #66: filter/sort 표준화).
+
+    기존 `category`, `is_active` 단건 인자를 dataclass 로 통일 + `q` 검색 신규.
+    """
+
+    category: ProductCategory | None = None
+    is_active: bool | None = None
+    q: str | None = None
 
 
 class ProductBase(BaseModel):

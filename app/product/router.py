@@ -23,11 +23,13 @@ from app.core.pagination import (
     product_pagination_dep,
     resolve_pagination,
 )
+from app.core.sort import parse_sort
 from app.di.providers import get_product_service
 from app.product.domain import ProductCategory
 from app.product.schemas import (
     ProductCreate,
     ProductInventoryUpdate,
+    ProductListFilters,
     ProductPublicView,
     ProductResponse,
     ProductUpdate,
@@ -37,6 +39,13 @@ from app.product.service import ProductService
 from app.user.domain import User
 
 router = APIRouter()
+
+
+# PR #66: sort 화이트리스트. 인덱스 보유 / 외부 노출 가능한 필드만.
+# repository 의 `_PRODUCT_SORT_COLUMN_MAP` 키와 1:1 대응 (수동 동기화).
+_PRODUCT_SORT_FIELDS: frozenset[str] = frozenset(
+    {"id", "name", "price", "created_at", "inventory"}
+)
 
 
 # PRD §5.2 옵션 C — envelope wrap 후 최종 형식 직접 적시. PII 정책: PRD §5.6.
@@ -248,8 +257,25 @@ async def list_products(
             "(request 시점 평가)."
         ),
     ),
-    category: ProductCategory | None = None,
+    sort: str | None = Query(
+        None,
+        description=(
+            "정렬 (Stripe 스타일, comma 구분, '-' prefix = DESC). "
+            "허용 필드: id, name, price, created_at, inventory. "
+            "예: ?sort=price,-created_at"
+        ),
+    ),
+    category: ProductCategory | None = Query(None, description="카테고리 필터"),
     is_active: bool | None = Query(None, description="활성화 상태 필터링"),
+    q: str | None = Query(
+        None,
+        min_length=1,
+        max_length=100,
+        description=(
+            "name / description 부분일치 검색 "
+            "(case-insensitive, LIKE 메타문자 자동 escape)"
+        ),
+    ),
     current_user: User | None = Depends(get_optional_current_user),
     product_service: ProductService = Depends(get_product_service),
 ) -> Any:
@@ -267,16 +293,22 @@ async def list_products(
     limit / per_page default 와 max 는 환경 변수 (PR ##):
     - `PRODUCT_LIST_DEFAULT_LIMIT` (default 100)
     - `LIST_MAX_LIMIT` (default 1000, offset/page 모드 공통 상한)
+
+    filter/sort 표준화 (PR #66):
+    - `?sort=field,-field2` (Stripe 스타일, multi-sort)
+    - `?category=&is_active=&q=` 평이한 query
+    - count 는 filter 반영 / sort 무관 (PR #52 연장)
     """
     enforce_per_page_max(per_page)
+    sort_fields = parse_sort(sort, _PRODUCT_SORT_FIELDS)
     effective_skip, effective_limit, mode = resolve_pagination(
         skip=paging.skip, limit=paging.limit, page=page, per_page=per_page
     )
     products, total = await product_service.list_products(
         skip=effective_skip,
         limit=effective_limit,
-        category=category,
-        is_active=is_active,
+        filters=ProductListFilters(category=category, is_active=is_active, q=q),
+        sort=sort_fields,
     )
     meta = build_meta(
         total=total,

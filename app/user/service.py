@@ -17,8 +17,10 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
+from app.core.sort import SortField
 from app.user.domain import NewUser, User, UserRole
 from app.user.repository import UserRepository
+from app.user.schemas import UserListFilters
 
 
 class UserService:
@@ -134,11 +136,22 @@ class UserService:
         return delete_result.outcome is CrudOutcome.OK
 
     async def list_users(
-        self, skip: int = 0, limit: int = 100
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        filters: UserListFilters | None = None,
+        sort: list[SortField] | None = None,
     ) -> tuple[list[User], int]:
-        """사용자 목록 + 전체 카운트 (pagination meta 용, PR #52)."""
-        items = await self.user_repository.list(skip, limit)
-        total = await self.user_repository.count()
+        """사용자 목록 + 필터 적용 후 카운트 (PR #52 tuple + PR #66 filter/sort).
+
+        filters/sort default 시 PR #52 동작과 동일 (호환성 유지).
+        """
+        _filters = filters if filters is not None else UserListFilters()
+        _sort = sort if sort is not None else []
+        items = await self.user_repository.list(
+            skip=skip, limit=limit, filters=_filters, sort=_sort
+        )
+        total = await self.user_repository.count(filters=_filters)
         return items, total
 
     def create_access_token_for_user(

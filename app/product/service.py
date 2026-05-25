@@ -10,11 +10,13 @@ from app.core.exceptions import (
     NotFoundException,
 )
 from app.core.result import CrudOutcome
+from app.core.sort import SortField
 from app.product.domain import NewProduct, Product, ProductCategory
 from app.product.repository import (
     InventoryUpdateOutcome,
     ProductRepository,
 )
+from app.product.schemas import ProductListFilters
 
 
 class ProductService:
@@ -70,16 +72,19 @@ class ProductService:
         self,
         skip: int = 0,
         limit: int = 100,
-        category: ProductCategory | None = None,
-        is_active: bool | None = None,
+        filters: ProductListFilters | None = None,
+        sort: list[SortField] | None = None,
     ) -> tuple[list[Product], int]:
-        """상품 목록 + 필터 적용 후 카운트 (pagination meta 용, PR #52)."""
+        """상품 목록 + 필터 적용 후 카운트 (PR #52 tuple + PR #66 filter/sort).
+
+        filters/sort default 시 PR #52 동작과 동일.
+        """
+        _filters = filters if filters is not None else ProductListFilters()
+        _sort = sort if sort is not None else []
         items = await self.product_repository.list(
-            skip=skip, limit=limit, category=category, is_active=is_active
+            skip=skip, limit=limit, filters=_filters, sort=_sort
         )
-        total = await self.product_repository.count(
-            category=category, is_active=is_active
-        )
+        total = await self.product_repository.count(filters=_filters)
         return items, total
 
     async def update_inventory(self, product_id: int, quantity_change: int) -> Product:

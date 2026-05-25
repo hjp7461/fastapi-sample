@@ -25,12 +25,14 @@ from app.core.pagination import (
     resolve_pagination,
     user_pagination_dep,
 )
+from app.core.sort import parse_sort
 from app.di.providers import get_user_service
-from app.user.domain import User
+from app.user.domain import User, UserRole
 from app.user.schemas import (
     Token,
     UserAdminView,
     UserCreate,
+    UserListFilters,
     UserResponse,
     UserSummary,
     UserUpdate,
@@ -40,6 +42,14 @@ from app.user.schemas import (
 from app.user.service import UserService
 
 router = APIRouter()
+
+
+# PR #66: sort 화이트리스트. 인덱스 보유 / 외부 노출 가능한 필드만.
+# `password_hash`, `hashed_password`, `full_name` (비인덱스) 등 명시 제외.
+# repository 의 `_USER_SORT_COLUMN_MAP` 키와 1:1 대응 (수동 동기화).
+_USER_SORT_FIELDS: frozenset[str] = frozenset(
+    {"id", "email", "created_at", "updated_at", "role"}
+)
 
 
 # PRD §5.2 옵션 C — envelope wrap 후 최종 형식 직접 적시 (Swagger UI prefill).
@@ -269,6 +279,25 @@ async def list_users(
             "(request 시점 평가)."
         ),
     ),
+    sort: str | None = Query(
+        None,
+        description=(
+            "정렬 (Stripe 스타일, comma 구분, '-' prefix = DESC). "
+            "허용 필드: id, email, created_at, updated_at, role. "
+            "예: ?sort=-created_at,email"
+        ),
+    ),
+    role: UserRole | None = Query(None, description="역할 필터 (admin/staff/customer)"),
+    is_active: bool | None = Query(None, description="활성 상태 필터"),
+    q: str | None = Query(
+        None,
+        min_length=1,
+        max_length=100,
+        description=(
+            "email / username / first_name / last_name 부분일치 검색 "
+            "(case-insensitive, LIKE 메타문자 자동 escape)"
+        ),
+    ),
     _: Any = Depends(require_admin),
     user_service: UserService = Depends(get_user_service),
 ) -> Any:
@@ -284,13 +313,22 @@ async def list_users(
     limit / per_page default 와 max 는 환경 변수 (PR ##):
     - `USER_LIST_DEFAULT_LIMIT` (default 100)
     - `LIST_MAX_LIMIT` (default 1000, offset/page 모드 공통 상한)
+
+    filter/sort 표준화 (PR #66):
+    - `?sort=field,-field2` (Stripe 스타일, multi-sort 입력 순서 보존)
+    - `?role=&is_active=&q=` 평이한 query (bracket / DSL 회피)
+    - count 는 filter 반영 / sort 무관 (PR #52 연장)
     """
     enforce_per_page_max(per_page)
+    sort_fields = parse_sort(sort, _USER_SORT_FIELDS)
     effective_skip, effective_limit, mode = resolve_pagination(
         skip=paging.skip, limit=paging.limit, page=page, per_page=per_page
     )
     users, total = await user_service.list_users(
-        skip=effective_skip, limit=effective_limit
+        skip=effective_skip,
+        limit=effective_limit,
+        filters=UserListFilters(role=role, is_active=is_active, q=q),
+        sort=sort_fields,
     )
     return {
         "data": [build_summary(u) for u in users],
