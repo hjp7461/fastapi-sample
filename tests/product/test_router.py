@@ -687,3 +687,93 @@ async def test_list_products_query_constraints(
     assert response.status_code == expected_status
     if expected_status == 422:
         assert response.json()["detail"]["code"] == "request_validation_error"
+
+
+@pytest.mark.asyncio
+async def test_list_products_page_mode_envelope(
+    client: AsyncClient, test_product: dict[str, Any]
+) -> None:
+    """PRD §5.6 (product): GET /products/?page=&per_page= 응답이 page 모드 meta.
+
+    `{data, meta: {total, page, per_page, total_pages}}` 형식 — offset 모드
+    필드 (skip/limit) 미포함. test_product 1건 시드.
+    """
+    response = await client.get("/api/v1/products/?page=1&per_page=5")
+    assert response.status_code == 200
+    body = response.json()
+    assert "data" in body
+    assert "meta" in body
+    meta = body["meta"]
+    assert meta["page"] == 1
+    assert meta["per_page"] == 5
+    assert isinstance(meta["total"], int)
+    assert isinstance(meta["total_pages"], int)
+    assert meta["total"] >= 1
+    assert "skip" not in meta
+    assert "limit" not in meta
+
+
+@pytest.mark.asyncio
+async def test_list_products_page_mode_with_category_filter(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """PRD §5.6 (product): 필터 + page 모드 — total 이 필터 후 카운트.
+
+    BOOK 카테고리 2건 시드 → ?category=BOOK&page=1&per_page=5 가
+    필터된 항목만 data 에 포함 + meta.total 도 필터 반영.
+    """
+    from app.product.domain import ProductCategory
+    from app.product.models import ProductModel
+
+    books = [
+        ProductModel(
+            name=f"book-{i}",
+            description="x",
+            price=Decimal("1.00"),
+            category=ProductCategory.BOOKS,
+            inventory=1,
+            is_active=True,
+        )
+        for i in range(2)
+    ]
+    db_session.add_all(books)
+    await db_session.commit()
+
+    response = await client.get(
+        "/api/v1/products/?category=books&page=1&per_page=5",
+        headers=admin_auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    meta = body["meta"]
+    assert meta["page"] == 1
+    assert meta["per_page"] == 5
+    assert meta["total"] == len(body["data"])
+    assert meta["total"] >= 2
+    # 필터 적용 — data 의 모든 항목이 BOOKS
+    assert all(p["category"] == "books" for p in body["data"])
+
+
+@pytest.mark.parametrize(
+    ("params", "expected_status"),
+    [
+        ({"page": 0}, 422),
+        ({"page": -1, "per_page": 10}, 422),
+        ({"page": 1, "per_page": 0}, 422),
+        ({"page": 1, "per_page": 1001}, 422),
+        ({"page": 1, "per_page": 1000}, 200),
+    ],
+)
+@pytest.mark.asyncio
+async def test_list_products_page_mode_query_constraints(
+    client: AsyncClient,
+    params: dict[str, int],
+    expected_status: int,
+) -> None:
+    """PRD §5.6 (product): page/per_page Query 제약 회귀 가드."""
+    response = await client.get("/api/v1/products/", params=params)
+    assert response.status_code == expected_status
+    if expected_status == 422:
+        assert response.json()["detail"]["code"] == "request_validation_error"

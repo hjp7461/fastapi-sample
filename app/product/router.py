@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Query, status
 from app.api.dependencies import get_optional_current_user
 from app.api.permissions import require_staff_or_admin
 from app.core.openapi import PaginatedResponse
+from app.core.pagination import build_meta, resolve_pagination
 from app.di.providers import get_product_service
 from app.product.domain import ProductCategory
 from app.product.schemas import (
@@ -125,6 +126,7 @@ async def delete_product(
     # Pydantic smart-mode 가 각 item 단위로 PublicView vs Response 매칭.
     # PublicView 가 먼저 (좁은 스키마: inventory 없음 우선 매치).
     response_model=PaginatedResponse[ProductPublicView | ProductResponse],
+    response_model_exclude_none=True,
     summary="상품 목록 조회 (viewer 분기)",
     description=(
         "상품 목록을 페이지 단위로 조회합니다. 인증 불필요 (공개). "
@@ -136,8 +138,19 @@ async def delete_product(
     tags=["products-public"],
 )
 async def list_products(
-    skip: int = Query(0, ge=0, description="페이징 offset (0 이상)"),
-    limit: int = Query(100, ge=1, le=1000, description="페이지 크기 (1~1000)"),
+    skip: int = Query(0, ge=0, description="페이징 offset (offset 모드, 0 이상)"),
+    limit: int = Query(
+        100, ge=1, le=1000, description="페이지 크기 (offset 모드, 1~1000)"
+    ),
+    page: int | None = Query(
+        None, ge=1, description="페이지 번호 (1-indexed, page 모드)"
+    ),
+    per_page: int | None = Query(
+        None,
+        ge=1,
+        le=1000,
+        description="페이지당 항목 수 (page 모드, 1~1000)",
+    ),
     category: ProductCategory | None = None,
     is_active: bool | None = Query(None, description="활성화 상태 필터링"),
     current_user: User | None = Depends(get_optional_current_user),
@@ -149,15 +162,28 @@ async def list_products(
     - 그 외 (anonymous / 일반 사용자) → `PaginatedResponse[ProductPublicView]`
       (inventory 제외)
 
-    PR #52: pagination meta envelope (`{data, meta: {total, skip, limit}}`).
+    페이징 듀얼 모드 (PR ##):
+    - offset 모드 (default, `?skip=&limit=`): meta = {total, skip, limit}
+    - page 모드 (`?page=&per_page=`): meta = {total, page, per_page, total_pages}
+    - 동시 제공 시 page 우선 (skip/limit silent 무시).
     """
+    effective_skip, effective_limit, mode = resolve_pagination(
+        skip=skip, limit=limit, page=page, per_page=per_page
+    )
     products, total = await product_service.list_products(
-        skip=skip,
-        limit=limit,
+        skip=effective_skip,
+        limit=effective_limit,
         category=category,
         is_active=is_active,
     )
-    meta = {"total": total, "skip": skip, "limit": limit}
+    meta = build_meta(
+        total=total,
+        mode=mode,
+        skip=effective_skip,
+        limit=effective_limit,
+        page=page,
+        per_page=per_page,
+    )
     if current_user is not None and current_user.is_staff_or_above():
         return {"data": products, "meta": meta}
     return {"data": [build_public_view(p) for p in products], "meta": meta}

@@ -395,3 +395,24 @@ async def test_paginated_response_schema_not_double_wrapped(
     assert data_schema.get("type") == "array", (
         f"data 가 array 가 아님 (이중 wrap 의심): {data_schema}"
     )
+
+
+@pytest.mark.asyncio
+async def test_pagination_meta_optional_fields_in_schema(
+    client: AsyncClient,
+) -> None:
+    """PR ##: PaginationMeta 의 offset + page 모드 필드가 모두 Optional 로 노출.
+
+    Option A (단일 모델 + Optional 필드) — `total` 만 required, 나머지 5개
+    (skip/limit/page/per_page/total_pages) 는 Optional 로 OpenAPI 양 모드 표현.
+    """
+    response = await client.get("/api/v1/openapi.json")
+    schema = response.json()["data"]
+    meta_schema = schema["components"]["schemas"]["PaginationMeta"]
+    props = meta_schema["properties"]
+    for field in ("total", "skip", "limit", "page", "per_page", "total_pages"):
+        assert field in props, f"PaginationMeta 에 {field} 필드 누락"
+    required = set(meta_schema.get("required", []))
+    assert required == {"total"}, (
+        f"required 가 {required} — total 만 필수여야 함 (Option A)"
+    )
