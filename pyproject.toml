@@ -65,6 +65,10 @@ dev = [
     "mypy>=1.2.0",
     "pre-commit>=4.0",
     "ruff>=0.6.0",
+    # asyncpg: CI 의 Postgres alembic upgrade/downgrade 검증 (`.github/workflows/ci.yml`
+    # 의 `services.postgres` step) 에서 사용. 운영 코드 import 0 — 로컬 dev/test 는
+    # SQLite + aiosqlite 인메모리 유지. 운영 Postgres 전환 시 main dependencies 로 이동.
+    "asyncpg>=0.29.0",
 ]
 
 test = [
