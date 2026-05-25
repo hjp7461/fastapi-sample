@@ -11,10 +11,10 @@ from app.core.security import get_password_hash, needs_rehash, verify_password
 # passlib 1.7.4 + bcrypt 가 생성한 실제 해시 (마이그레이션 PR 시점에 박제).
 # 이 해시들은 새 구현 (bcrypt 직접 사용) 으로도 동일하게 verify 되어야 한다.
 LEGACY_HASH_TEST = "$2b$12$MJgQCEdQ2DFJ9WuWxNgvzeJlnhERQgfRZP8iWBSy/EYJmveWdxJWa"
-# 평문: "TestPassword123"
+# plaintext for LEGACY_HASH_TEST is "TestPassword123"
 
 LEGACY_HASH_ADMIN = "$2b$12$K2aYU8NmZR1xwybLA9UGXeeWIHaYjt/NTDeiPkuOQTq/yVhUhk8X2"
-# 평문: "admin12345"
+# plaintext for LEGACY_HASH_ADMIN is "admin12345"
 
 
 def test_hash_then_verify_roundtrip() -> None:

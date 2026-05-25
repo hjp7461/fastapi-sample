@@ -9,9 +9,6 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# pytest-asyncio 8.3.5에서는 이제 Test 클래스 대신 함수에 직접 마커를 적용
-# pytestmark = pytest.mark.asyncio  # 불필요
-
 
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
 async def test_create_user(client: AsyncClient) -> None:
@@ -713,7 +710,7 @@ async def test_list_users_paginated_envelope(
 
 
 @pytest.mark.parametrize(
-    "params,expected_status",
+    ("params", "expected_status"),
     [
         ({"skip": -1}, 422),
         ({"limit": 0}, 422),

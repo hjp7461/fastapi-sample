@@ -43,7 +43,7 @@ class ProductRepository:
     상품 데이터 액세스 레이어.
     """
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def create(self, new_product: NewProduct) -> Product:
