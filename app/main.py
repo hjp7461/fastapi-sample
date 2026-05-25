@@ -19,7 +19,7 @@ from app.core.middleware import (
     RequestIDMiddleware,
     SuccessEnvelopeMiddleware,
 )
-from app.core.openapi import customize_openapi
+from app.core.openapi import OPENAPI_TAGS, customize_openapi
 from app.di.containers import Container
 
 # 로깅 단일 진입점 — sink/포맷/레벨 환경 변수 기반 구성
@@ -52,6 +52,7 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     docs_url=f"{settings.API_V1_STR}/docs",
     redoc_url=f"{settings.API_V1_STR}/redoc",
+    openapi_tags=OPENAPI_TAGS,  # PR #63 — Swagger UI 그룹화 (4 tags 권한 경계)
     lifespan=lifespan,  # lifespan 컨텍스트 매니저 설정
 )
 

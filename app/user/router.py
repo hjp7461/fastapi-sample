@@ -39,6 +39,7 @@ router = APIRouter()
         "이메일은 unique — 중복 시 409 envelope. "
         "비밀번호는 해시 저장되며 응답에 포함되지 않습니다."
     ),
+    tags=["users-auth"],
 )
 async def create_user(
     user_in: UserCreate, user_service: UserService = Depends(get_user_service)
@@ -55,6 +56,7 @@ async def create_user(
         "현재 access token 으로 인증된 본인의 전체 정보 (PII 포함) 를 "
         "조회합니다. 인증 필요 (없으면 401 envelope)."
     ),
+    tags=["users-auth"],
 )
 async def get_current_user_info(current_user: Any = Depends(get_current_user)) -> Any:
     """현재 인증된 사용자 정보를 조회합니다."""
@@ -70,6 +72,7 @@ async def get_current_user_info(current_user: Any = Depends(get_current_user)) -
         "전송한 필드만 반영 (partial update, `exclude_unset=True`). "
         "이메일 변경 시 unique 충돌 가능 (409 envelope)."
     ),
+    tags=["users-auth"],
 )
 async def update_current_user(
     user_in: UserUpdate,
@@ -92,6 +95,7 @@ async def update_current_user(
         "인증 실패 시 401 envelope. "
         "응답은 RFC 6749 표준 형식 (envelope wrap 제외)."
     ),
+    tags=["users-auth"],
 )
 async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -118,6 +122,7 @@ async def login_for_access_token(
         "본인 조회 시 `UserResponse` (전체 PII), 관리자가 타인 조회 시 "
         "`UserAdminView` (이메일 마스킹 + 이름 제외) 로 응답 분기."
     ),
+    tags=["users-admin"],
 )
 async def get_user_by_id(
     user_id: int,
@@ -146,6 +151,7 @@ async def get_user_by_id(
         "목록 페이지에서 이메일/이름 무차별 노출 차단. "
         "`{data, meta: {total, skip, limit}}` 형식."
     ),
+    tags=["users-admin"],
 )
 async def list_users(
     skip: int = Query(0, ge=0, description="페이징 offset (0 이상)"),
