@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.result import CrudOutcome, CrudResult
 from app.product.domain import NewProduct, Product, ProductCategory
 from app.product.models import ProductModel
 
@@ -61,32 +62,29 @@ class ProductRepository:
         await self.session.refresh(db_product)
         return self._to_domain(db_product)
 
-    async def get_by_id(self, product_id: int) -> Product | None:
-        """ID로 상품을 조회합니다."""
+    async def get_by_id(self, product_id: int) -> CrudResult[Product]:
+        """ID로 상품을 조회합니다 (PR #56: CrudResult 패턴)."""
         result = await self.session.execute(
             select(ProductModel).where(ProductModel.id == product_id)
         )
         db_product = result.scalars().first()
-        if db_product:
-            return self._to_domain(db_product)
-        return None
+        if db_product is None:
+            return CrudResult(outcome=CrudOutcome.NOT_FOUND)
+        return CrudResult(outcome=CrudOutcome.OK, value=self._to_domain(db_product))
 
     async def update(
         self, product_id: int, product_data: dict[str, Any]
-    ) -> Product | None:
-        """상품 정보를 업데이트합니다."""
-        # 먼저 상품이 존재하는지 확인
+    ) -> CrudResult[Product]:
+        """상품 정보를 업데이트합니다 (PR #56)."""
         result = await self.session.execute(
             select(ProductModel).where(ProductModel.id == product_id)
         )
         db_product = result.scalars().first()
-        if not db_product:
-            return None
+        if db_product is None:
+            return CrudResult(outcome=CrudOutcome.NOT_FOUND)
 
-        # 업데이트할 필드 필터링
         update_data = {k: v for k, v in product_data.items() if v is not None}
 
-        # 데이터가 있으면 업데이트 실행
         if update_data:
             await self.session.execute(
                 update(ProductModel)
@@ -95,21 +93,21 @@ class ProductRepository:
             )
             await self.session.commit()
 
-            # 업데이트된 상품 조회
             result = await self.session.execute(
                 select(ProductModel).where(ProductModel.id == product_id)
             )
             db_product = result.scalars().first()
 
-        return self._to_domain(db_product)
+        return CrudResult(outcome=CrudOutcome.OK, value=self._to_domain(db_product))
 
-    async def delete(self, product_id: int) -> bool:
-        """상품을 삭제합니다."""
+    async def delete(self, product_id: int) -> CrudResult[None]:
+        """상품을 삭제합니다 (PR #56: bool → outcome enum)."""
         result = await self.session.execute(
             delete(ProductModel).where(ProductModel.id == product_id)
         )
         await self.session.commit()
-        return result.rowcount > 0
+        outcome = CrudOutcome.OK if result.rowcount > 0 else CrudOutcome.NOT_FOUND
+        return CrudResult(outcome=outcome)
 
     async def list(
         self,

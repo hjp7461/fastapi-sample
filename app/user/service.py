@@ -10,6 +10,7 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.exceptions import NotFoundException, ValidationException
+from app.core.result import CrudOutcome
 from app.core.security import (
     _extract_bcrypt_rounds,
     create_access_token,
@@ -36,10 +37,14 @@ class UserService:
         - stored > configured (다운그레이드): 약화 차단. logger.warning 으로 가시화만.
         - stored == configured 또는 파싱 실패: 무처리.
         """
-        user = await self.user_repository.get_by_email(email)
+        get_result = await self.user_repository.get_by_email(email)
+        if get_result.outcome is CrudOutcome.NOT_FOUND:
+            return None
+        assert get_result.value is not None
+        user = get_result.value
         # user.id 는 도메인이 not None 보장 (PR #38). hashed_password 는 OAuth /
         # 외부 로그인 시나리오에서 None 가능 → narrow 유지.
-        if not user or not user.hashed_password:
+        if not user.hashed_password:
             return None
         if not verify_password(password, user.hashed_password):
             return None
@@ -76,8 +81,8 @@ class UserService:
     async def create_user(self, user_data: dict[str, Any]) -> User:
         """새 사용자를 생성합니다."""
         # 이메일 중복 확인
-        existing_user = await self.user_repository.get_by_email(user_data["email"])
-        if existing_user:
+        existing = await self.user_repository.get_by_email(user_data["email"])
+        if existing.outcome is CrudOutcome.OK:
             raise ValidationException("이미 사용 중인 이메일입니다.")
 
         # 비밀번호 해싱
@@ -99,10 +104,11 @@ class UserService:
 
     async def get_user(self, user_id: int) -> User:
         """ID로 사용자를 조회합니다."""
-        user = await self.user_repository.get_by_id(user_id)
-        if not user:
+        result = await self.user_repository.get_by_id(user_id)
+        if result.outcome is CrudOutcome.NOT_FOUND:
             raise NotFoundException(f"User with ID {user_id} not found")
-        return user
+        assert result.value is not None
+        return result.value
 
     async def update_user(self, user_id: int, user_data: dict[str, Any]) -> User:
         """사용자 정보를 업데이트합니다."""
@@ -111,20 +117,21 @@ class UserService:
             user_data["hashed_password"] = get_password_hash(user_data.pop("password"))
 
         # 업데이트 실행
-        user = await self.user_repository.update(user_id, user_data)
-        if not user:
+        result = await self.user_repository.update(user_id, user_data)
+        if result.outcome is CrudOutcome.NOT_FOUND:
             raise NotFoundException(f"User with ID {user_id} not found")
-
-        return user
+        assert result.value is not None
+        return result.value
 
     async def delete_user(self, user_id: int) -> bool:
         """사용자를 삭제합니다."""
         # 삭제 전 존재 확인
-        user = await self.user_repository.get_by_id(user_id)
-        if not user:
+        get_result = await self.user_repository.get_by_id(user_id)
+        if get_result.outcome is CrudOutcome.NOT_FOUND:
             raise NotFoundException(f"User with ID {user_id} not found")
 
-        return await self.user_repository.delete(user_id)
+        delete_result = await self.user_repository.delete(user_id)
+        return delete_result.outcome is CrudOutcome.OK
 
     async def list_users(
         self, skip: int = 0, limit: int = 100
