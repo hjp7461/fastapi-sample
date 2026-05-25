@@ -81,3 +81,6 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_products_name"), table_name="products")
     op.drop_table("products")
     # ### end Alembic commands ###
+    # Postgres 에서 자동 생성된 enum type 명시적 제거 (SQLite 무영향, checkfirst).
+    sa.Enum(name="productcategory").drop(op.get_bind(), checkfirst=True)
+    sa.Enum(name="userrole").drop(op.get_bind(), checkfirst=True)

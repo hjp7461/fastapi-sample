@@ -14,6 +14,24 @@ jobs:
   check:
     name: lint + type + test + alembic + sdk
     runs-on: ubuntu-latest
+    services:
+      # PR #N: Postgres 마이그레이션 회귀 가드 (RUNBOOK §7 후속).
+      # alembic upgrade head / downgrade base 의 Postgres 동작 검증용.
+      # 사용자/운영 pytest 는 SQLite 인메모리 유지 (conftest.py) — services 는
+      # 본 job 의 Postgres alembic step 에서만 사용 (idle 비용 = 컨테이너 1개).
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,6 +80,32 @@ jobs:
           uv run alembic upgrade head
           uv run alembic downgrade base
           rm -f _ci.db
+
+      # --- PR #N: Postgres 마이그레이션 회귀 가드 (RUNBOOK §7) ---
+      # SQLite 호환만으로 Postgres 정상 동작이 보장되지 않음 (Enum 등은 Postgres
+      # 에서 별도 type 으로 만들어지고 alembic 자동 DROP 누락 가능). 옵션 6.3-β
+      # 의 잔존 객체 검증으로 downgrade 결함 (테이블/enum DROP 누락) 자동 catch.
+      - name: alembic upgrade head + downgrade base (Postgres smoke + 잔존 객체 검증)
+        env:
+          DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
+          PGPASSWORD: ci
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+          # 잔존 사용자 테이블 0건 검증 (alembic_version 메타 테이블은 alembic 표준상 잔존 가능 — 제외).
+          remaining_tables=$(psql -h localhost -U ci -d ci -At -c \
+            "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename NOT LIKE 'alembic%';")
+          if [ "$remaining_tables" != "0" ]; then
+            echo "::error::Postgres downgrade 후 잔존 테이블 ${remaining_tables}건 (DROP 누락)"
+            exit 1
+          fi
+          # 잔존 enum type 0건 검증 (DROP TYPE 누락 catch — Postgres-specific 결함).
+          remaining_enums=$(psql -h localhost -U ci -d ci -At -c \
+            "SELECT count(*) FROM pg_type WHERE typname IN ('productcategory','userrole');")
+          if [ "$remaining_enums" != "0" ]; then
+            echo "::error::Postgres downgrade 후 잔존 enum type ${remaining_enums}건 (DROP TYPE 누락)"
+            exit 1
+          fi
 
       # --- PR #N: SDK CI 통합 (typescript-fetch dry-run) ---
       # OpenAPI schema 결함 (예: $ref cycle / 예약어 operationId / generator 거부
