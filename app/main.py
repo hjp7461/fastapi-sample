@@ -7,6 +7,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -19,11 +20,17 @@ from app.core.middleware import (
     RequestIDMiddleware,
     SuccessEnvelopeMiddleware,
 )
+from app.core.observability import setup_sentry
 from app.core.openapi import OPENAPI_TAGS, customize_openapi
 from app.di.containers import Container
 
 # 로깅 단일 진입점 — sink/포맷/레벨 환경 변수 기반 구성
 setup_logging()
+
+# 관측성 단일 진입점 — SENTRY_DSN 빈 값 시 no-op (개발/테스트 0 영향).
+# setup_logging() 직후 호출 — loguru sink 가 먼저 구성되어야
+# LoguruIntegration 이 hook 가능.
+setup_sentry()
 
 # 의존성 주입 컨테이너 초기화
 container = Container()
@@ -42,6 +49,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if container.db.initialized:
         scoped_session = container.db()
         await scoped_session.remove()
+
+    # Sentry transport queue flush — DSN 빈 값 시 no-op (sentry_sdk default).
+    # graceful shutdown 시점에 진행 중 event 손실 차단 (PRD §8 리스크).
+    sentry_sdk.flush(timeout=2)
 
 
 # 애플리케이션 생성
