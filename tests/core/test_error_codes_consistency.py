@@ -96,7 +96,7 @@ def test_app_exception_super_fallback_is_registered() -> None:
 
 
 @pytest.mark.parametrize(
-    "exc_cls,expected",
+    ("exc_cls", "expected"),
     DOMAIN_EXCEPTION_MATRIX.items(),
     ids=[c.__name__ for c in DOMAIN_EXCEPTION_MATRIX],
 )
@@ -110,7 +110,7 @@ def test_domain_exception_default_code(
 
 
 @pytest.mark.parametrize(
-    "exc_cls,expected",
+    ("exc_cls", "expected"),
     DOMAIN_EXCEPTION_MATRIX.items(),
     ids=[c.__name__ for c in DOMAIN_EXCEPTION_MATRIX],
 )
@@ -125,7 +125,7 @@ def test_domain_exception_default_message(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "exc_cls,expected_status",
+    ("exc_cls", "expected_status"),
     [(cls, matrix[0]) for cls, matrix in DOMAIN_EXCEPTION_MATRIX.items()],
     ids=[c.__name__ for c in DOMAIN_EXCEPTION_MATRIX],
 )

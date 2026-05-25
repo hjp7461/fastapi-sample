@@ -25,7 +25,7 @@ class UserService:
     사용자 관련 비즈니스 로직을 처리하는 서비스.
     """
 
-    def __init__(self, user_repository: UserRepository):
+    def __init__(self, user_repository: UserRepository) -> None:
         self.user_repository = user_repository
 
     async def authenticate_user(self, email: str, password: str) -> User | None:

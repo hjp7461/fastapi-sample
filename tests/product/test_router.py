@@ -12,9 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.user.domain import UserRole
 
-# pytest 8.3.5에서는 이제 Test 클래스 대신 함수에 직접 마커를 적용합니다
-# pytestmark = pytest.mark.asyncio  # 불필요
-
 
 # tests/product/test_router.py 수정 예시
 @pytest.mark.asyncio  # 명시적으로 asyncio 마커 추가
@@ -616,7 +613,8 @@ async def test_list_products_paginated_envelope(
     response = await client.get("/api/v1/products/?skip=0&limit=20")
     assert response.status_code == 200
     body = response.json()
-    assert "data" in body and "meta" in body
+    assert "data" in body
+    assert "meta" in body
     assert isinstance(body["data"], list)
     assert body["meta"]["skip"] == 0
     assert body["meta"]["limit"] == 20
@@ -670,7 +668,7 @@ async def test_list_products_filter_count_matches(
 
 
 @pytest.mark.parametrize(
-    "params,expected_status",
+    ("params", "expected_status"),
     [
         ({"skip": -1}, 422),
         ({"limit": 0}, 422),

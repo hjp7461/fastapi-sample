@@ -21,7 +21,7 @@ class ProductService:
     상품 관련 비즈니스 로직을 처리하는 서비스.
     """
 
-    def __init__(self, product_repository: ProductRepository):
+    def __init__(self, product_repository: ProductRepository) -> None:
         self.product_repository = product_repository
 
     async def create_product(self, product_data: dict[str, Any]) -> Product:
