@@ -12,6 +12,7 @@ import json
 import logging
 import re
 from collections.abc import AsyncIterator, Iterator
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -619,12 +620,17 @@ async def test_app_exception_fallback_handler_returns_envelope_500(
 async def test_success_response_is_wrapped_in_data_envelope(
     client: AsyncClient,
 ) -> None:
-    """200 JSON 응답 → `{"data": <payload>}` envelope wrap."""
+    """200 JSON 응답 → `{"data": <payload>}` envelope wrap (+ meta — 본 PR).
+
+    본 PR (응답 meta 확장) 도입 이후 envelope 외층이 `{data, meta}` 로
+    확장. system meta 의 상세 검증은 `test_single_object_response_has_*` 가
+    담당, 본 테스트는 envelope wrap 기본 동작 회귀 가드 유지.
+    """
     response = await client.get("/__test_request_id")
     assert response.status_code == 200
     body = response.json()
-    # envelope 외층
-    assert set(body.keys()) == {"data"}
+    # envelope 외층 (data + meta — 본 PR)
+    assert set(body.keys()) == {"data", "meta"}
     # payload 보존
     assert "request_id" in body["data"]
 
@@ -723,3 +729,192 @@ async def test_success_envelope_idempotent_skips_already_wrapped(
         assert isinstance(body["data"][0], dict)
         # 이중 wrap 시 data[0] 가 {"data": ..., "meta": ...} 형태가 됨
         assert "data" not in body["data"][0] or "meta" not in body["data"][0]
+
+
+# ---------------------------------------------------------------------------
+# 응답 meta 확장 (본 PR) — system meta (requested_at + request_id) 자동 주입
+# ---------------------------------------------------------------------------
+
+
+ISO8601_UTC_PATTERN = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?\+00:00$"
+)
+
+
+@pytest.mark.asyncio
+async def test_single_object_response_has_system_meta(
+    client: AsyncClient,
+) -> None:
+    """본 PR §5.7 #1: 단일 객체 응답 (envelope wrap 대상) 에 system meta 노출.
+
+    `/__test_request_id` 는 단일 dict 반환 — middleware 가 envelope wrap +
+    meta 자동 주입. pagination 필드 (`total`/`skip` 등) 는 단일 응답에서
+    omit.
+    """
+    response = await client.get("/__test_request_id")
+    assert response.status_code == 200
+    body = response.json()
+    assert "data" in body
+    assert "meta" in body
+    assert "requested_at" in body["meta"]
+    assert "request_id" in body["meta"]
+    # 단일 응답은 pagination 필드 omit
+    assert "total" not in body["meta"]
+    assert "skip" not in body["meta"]
+    assert "limit" not in body["meta"]
+
+
+@pytest.mark.asyncio
+async def test_list_response_merges_pagination_and_system_meta(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+) -> None:
+    """본 PR §5.7 #2: list 응답의 meta 가 pagination + system 필드 union.
+
+    pagination 필드 (PR #52) 가 보존됨 (setdefault → 덮어쓰기 X).
+    """
+    response = await client.get(
+        "/api/v1/users/?skip=0&limit=20", headers=admin_auth_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    meta = body["meta"]
+    # PR #52 pagination 필드 보존 (덮어쓰기 X)
+    assert meta["skip"] == 0
+    assert meta["limit"] == 20
+    assert meta["total"] >= 1
+    # 본 PR 시스템 필드 추가
+    assert "requested_at" in meta
+    assert "request_id" in meta
+
+
+@pytest.mark.asyncio
+async def test_oauth2_token_response_has_no_system_meta(
+    client: AsyncClient,
+    test_user: dict[str, Any],
+) -> None:
+    """본 PR §5.7 #3: OAuth2 /users/token 응답 = RFC 6749 표준 (meta 비주입).
+
+    middleware 의 `OAUTH2_EXCEPTION_PATHS` skip 로직이 본 PR 의 meta 주입도
+    함께 건너뜀. envelope wrap 자체가 비대상.
+    """
+    response = await client.post(
+        "/api/v1/users/token",
+        data={"username": test_user["email"], "password": test_user["password"]},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    # RFC 6749 표준 키
+    assert "access_token" in body
+    assert body["token_type"] == "bearer"
+    # envelope / meta 외층 없음
+    assert "data" not in body
+    assert "meta" not in body
+
+
+@pytest.mark.asyncio
+async def test_204_no_content_has_no_system_meta(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    test_product: dict[str, Any],
+) -> None:
+    """본 PR §5.7 #4: 204 응답은 body 없음 → meta 주입 X (status_code skip).
+
+    DELETE /products/{id} 가 204 반환. body 자체가 없으므로 meta 주입
+    경로 자체 미실행 (middleware 의 `status == 204` 조기 반환).
+    """
+    response = await client.delete(
+        f"/api/v1/products/{test_product['id']}", headers=admin_auth_headers
+    )
+    assert response.status_code == 204
+    assert response.content == b""
+
+
+@pytest.mark.asyncio
+async def test_error_response_has_no_system_meta(client: AsyncClient) -> None:
+    """본 PR §5.7 #5: 4xx error envelope 에 system meta 미주입.
+
+    middleware 가 `200 <= status < 300` 조건에서 조기 반환 — error envelope
+    (PR #36/#42 계열) 은 별도 handler 단일 진실원, system meta 누출 X.
+    """
+    response = await client.get("/__test_raise_404")
+    assert response.status_code == 404
+    body = response.json()
+    # error envelope (PR #42) — detail object 만, system meta 키 없음
+    assert "detail" in body
+    detail = body["detail"]
+    assert "code" in detail
+    assert detail["code"] == "not_found"
+    # 본 PR system meta 가 error 응답에는 주입되지 않음
+    assert "meta" not in body
+    assert "requested_at" not in detail
+    assert "request_id" not in detail
+
+
+@pytest.mark.asyncio
+async def test_requested_at_is_utc_iso8601(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+) -> None:
+    """본 PR §5.7 #6: meta.requested_at 가 UTC ISO8601 형식.
+
+    `+00:00` suffix + `datetime.fromisoformat` round-trip 가능 + tzinfo
+    UTC 검증. `utcnow_aware().isoformat()` 단일 진실원.
+    """
+    from datetime import UTC, datetime
+
+    response = await client.get("/api/v1/users/?limit=1", headers=admin_auth_headers)
+    requested_at = response.json()["meta"]["requested_at"]
+    assert ISO8601_UTC_PATTERN.match(requested_at), (
+        f"ISO8601 +00:00 형식 기대, 실제: {requested_at!r}"
+    )
+    parsed = datetime.fromisoformat(requested_at)
+    assert parsed.tzinfo is not None
+    assert parsed.utcoffset() == UTC.utcoffset(parsed)
+
+
+@pytest.mark.asyncio
+async def test_meta_request_id_matches_header(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+) -> None:
+    """본 PR §5.7 #7: meta.request_id 가 X-Request-ID 헤더와 동일 (단일 진실원).
+
+    PR #32 의 contextvar 한 곳에서 set/get — 헤더와 body 가 불일치하면
+    request 추적 시 디버깅 비용 증가.
+    """
+    response = await client.get("/api/v1/users/?limit=1", headers=admin_auth_headers)
+    header_rid = response.headers.get("X-Request-ID")
+    body_rid = response.json()["meta"]["request_id"]
+    assert header_rid is not None
+    assert body_rid is not None
+    assert header_rid == body_rid
+
+
+def test_meta_omits_request_id_when_contextvar_unset() -> None:
+    """본 PR §5.7 #8: contextvar 미설정 시 request_id omit.
+
+    RequestIDMiddleware 우회 (또는 백그라운드 태스크) 시 `request_id_var`
+    의 default `"-"` placeholder 가 응답에 노출되지 않도록 omit. 단,
+    `requested_at` 은 서버 시각이므로 fallback 불필요 — 항상 노출.
+    """
+    from app.core.context import request_id_var
+    from app.core.middleware import _build_system_meta
+
+    # default placeholder ("-") 환경 — RequestIDMiddleware 우회 시와 동일
+    token = request_id_var.set("-")
+    try:
+        meta = _build_system_meta()
+        assert "requested_at" in meta
+        assert "request_id" not in meta  # omit
+    finally:
+        request_id_var.reset(token)
+
+    # 빈 문자열도 동일 처리
+    token = request_id_var.set("")
+    try:
+        meta = _build_system_meta()
+        assert "requested_at" in meta
+        assert "request_id" not in meta
+    finally:
+        request_id_var.reset(token)

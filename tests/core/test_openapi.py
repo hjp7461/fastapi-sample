@@ -403,23 +403,34 @@ async def test_paginated_response_schema_not_double_wrapped(
 
 
 @pytest.mark.asyncio
-async def test_pagination_meta_optional_fields_in_schema(
+async def test_response_meta_optional_fields_in_schema(
     client: AsyncClient,
 ) -> None:
-    """PR ##: PaginationMeta 의 offset + page 모드 필드가 모두 Optional 로 노출.
+    """PR (응답 meta 확장): ResponseMeta 의 pagination + 시스템 필드가 모두 Optional.
 
-    Option A (단일 모델 + Optional 필드) — `total` 만 required, 나머지 5개
-    (skip/limit/page/per_page/total_pages) 는 Optional 로 OpenAPI 양 모드 표현.
+    PR #52 / 듀얼 모드 / 본 PR 통합 단일 모델 — `total` 포함 모든 필드
+    Optional (Option A). pagination 미적용 단일 응답은 system 필드 (`requested_at`,
+    `request_id`) 만 노출, list 응답은 양쪽 union.
     """
     response = await client.get("/api/v1/openapi.json")
     schema = response.json()["data"]
-    meta_schema = schema["components"]["schemas"]["PaginationMeta"]
+    meta_schema = schema["components"]["schemas"]["ResponseMeta"]
     props = meta_schema["properties"]
-    for field in ("total", "skip", "limit", "page", "per_page", "total_pages"):
-        assert field in props, f"PaginationMeta 에 {field} 필드 누락"
+    for field in (
+        "total",
+        "skip",
+        "limit",
+        "page",
+        "per_page",
+        "total_pages",
+        "requested_at",
+        "request_id",
+    ):
+        assert field in props, f"ResponseMeta 에 {field} 필드 누락"
+    # 본 PR: 모든 필드 Optional — required 키 자체가 없거나 비어 있어야 함
     required = set(meta_schema.get("required", []))
-    assert required == {"total"}, (
-        f"required 가 {required} — total 만 필수여야 함 (Option A)"
+    assert required == set(), (
+        f"required 가 {required} — 모든 필드 Optional 이어야 함 (Option A)"
     )
 
 
