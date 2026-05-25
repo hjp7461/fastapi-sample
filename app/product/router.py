@@ -26,7 +26,12 @@ from app.user.domain import User
 router = APIRouter()
 
 
-@router.post("/", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/",
+    response_model=ProductResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="상품 생성 (staff/admin)",
+)
 async def create_product(
     product_in: ProductCreate,
     product_service: ProductService = Depends(get_product_service),
@@ -36,7 +41,11 @@ async def create_product(
     return await product_service.create_product(product_in.model_dump())
 
 
-@router.get("/{product_id}", response_model=ProductPublicView | ProductResponse)
+@router.get(
+    "/{product_id}",
+    response_model=ProductPublicView | ProductResponse,
+    summary="상품 단건 조회 (viewer 분기)",
+)
 async def get_product_by_id(
     product_id: int,
     current_user: User | None = Depends(get_optional_current_user),
@@ -54,7 +63,11 @@ async def get_product_by_id(
     return build_public_view(product)
 
 
-@router.put("/{product_id}", response_model=ProductResponse)
+@router.put(
+    "/{product_id}",
+    response_model=ProductResponse,
+    summary="상품 정보 수정 (staff/admin)",
+)
 async def update_product(
     product_id: int,
     product_in: ProductUpdate,
@@ -67,7 +80,11 @@ async def update_product(
     )
 
 
-@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{product_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="상품 삭제 (staff/admin)",
+)
 async def delete_product(
     product_id: int,
     product_service: ProductService = Depends(get_product_service),
@@ -83,6 +100,7 @@ async def delete_product(
     # Pydantic smart-mode 가 각 item 단위로 PublicView vs Response 매칭.
     # PublicView 가 먼저 (좁은 스키마: inventory 없음 우선 매치).
     response_model=PaginatedResponse[ProductPublicView | ProductResponse],
+    summary="상품 목록 조회 (viewer 분기)",
 )
 async def list_products(
     skip: int = Query(0, ge=0, description="페이징 offset (0 이상)"),
@@ -112,7 +130,11 @@ async def list_products(
     return {"data": [build_public_view(p) for p in products], "meta": meta}
 
 
-@router.patch("/{product_id}/inventory", response_model=ProductResponse)
+@router.patch(
+    "/{product_id}/inventory",
+    response_model=ProductResponse,
+    summary="상품 재고 변경 (staff/admin, 원자적)",
+)
 async def update_product_inventory(
     product_id: int,
     inventory_update: ProductInventoryUpdate,

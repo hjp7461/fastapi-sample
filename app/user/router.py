@@ -29,7 +29,12 @@ from app.user.service import UserService
 router = APIRouter()
 
 
-@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="사용자 회원가입",
+)
 async def create_user(
     user_in: UserCreate, user_service: UserService = Depends(get_user_service)
 ) -> Any:
@@ -37,13 +42,13 @@ async def create_user(
     return await user_service.create_user(user_in.model_dump())
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me", response_model=UserResponse, summary="본인 정보 조회")
 async def get_current_user_info(current_user: Any = Depends(get_current_user)) -> Any:
     """현재 인증된 사용자 정보를 조회합니다."""
     return current_user
 
 
-@router.put("/me", response_model=UserResponse)
+@router.put("/me", response_model=UserResponse, summary="본인 정보 수정")
 async def update_current_user(
     user_in: UserUpdate,
     current_user: Any = Depends(get_current_user),
@@ -55,7 +60,7 @@ async def update_current_user(
     )
 
 
-@router.post("/token", response_model=Token)
+@router.post("/token", response_model=Token, summary="OAuth2 토큰 로그인")
 async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     user_service: UserService = Depends(get_user_service),
@@ -71,7 +76,11 @@ async def login_for_access_token(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@router.get("/{user_id}", response_model=UserResponse | UserAdminView)
+@router.get(
+    "/{user_id}",
+    response_model=UserResponse | UserAdminView,
+    summary="사용자 단건 조회 (본인/관리자)",
+)
 async def get_user_by_id(
     user_id: int,
     current_user: User = Depends(require_self_or_admin),
@@ -89,7 +98,11 @@ async def get_user_by_id(
     return build_admin_view(user)
 
 
-@router.get("/", response_model=PaginatedResponse[UserSummary])
+@router.get(
+    "/",
+    response_model=PaginatedResponse[UserSummary],
+    summary="사용자 목록 조회 (관리자 전용)",
+)
 async def list_users(
     skip: int = Query(0, ge=0, description="페이징 offset (0 이상)"),
     limit: int = Query(100, ge=1, le=1000, description="페이지 크기 (1~1000)"),
