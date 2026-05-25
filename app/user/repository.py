@@ -6,6 +6,7 @@
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.result import CrudOutcome, CrudResult
 from app.user.domain import NewUser, User
 from app.user.models import UserModel
 
@@ -34,61 +35,58 @@ class UserRepository:
         await self.session.refresh(db_user)
         return self._to_domain(db_user)
 
-    async def get_by_id(self, user_id: int) -> User | None:
-        """ID로 사용자를 조회합니다."""
+    async def get_by_id(self, user_id: int) -> CrudResult[User]:
+        """ID로 사용자를 조회합니다 (PR #56: CrudResult 패턴)."""
         result = await self.session.execute(
             select(UserModel).where(UserModel.id == user_id)
         )
         db_user = result.scalars().first()
-        if db_user:
-            return self._to_domain(db_user)
-        return None
+        if db_user is None:
+            return CrudResult(outcome=CrudOutcome.NOT_FOUND)
+        return CrudResult(outcome=CrudOutcome.OK, value=self._to_domain(db_user))
 
-    async def get_by_email(self, email: str) -> User | None:
-        """이메일로 사용자를 조회합니다."""
+    async def get_by_email(self, email: str) -> CrudResult[User]:
+        """이메일로 사용자를 조회합니다 (PR #56)."""
         result = await self.session.execute(
             select(UserModel).where(UserModel.email == email)
         )
         db_user = result.scalars().first()
-        if db_user:
-            return self._to_domain(db_user)
-        return None
+        if db_user is None:
+            return CrudResult(outcome=CrudOutcome.NOT_FOUND)
+        return CrudResult(outcome=CrudOutcome.OK, value=self._to_domain(db_user))
 
-    async def update(self, user_id: int, user_data: dict) -> User | None:
-        """사용자 정보를 업데이트합니다."""
-        # 먼저 사용자가 존재하는지 확인
+    async def update(self, user_id: int, user_data: dict) -> CrudResult[User]:
+        """사용자 정보를 업데이트합니다 (PR #56)."""
         result = await self.session.execute(
             select(UserModel).where(UserModel.id == user_id)
         )
         db_user = result.scalars().first()
-        if not db_user:
-            return None
+        if db_user is None:
+            return CrudResult(outcome=CrudOutcome.NOT_FOUND)
 
-        # 업데이트할 필드 필터링
         update_data = {k: v for k, v in user_data.items() if v is not None}
 
-        # 데이터가 있으면 업데이트 실행
         if update_data:
             await self.session.execute(
                 update(UserModel).where(UserModel.id == user_id).values(**update_data)
             )
             await self.session.commit()
 
-            # 업데이트된 사용자 조회
             result = await self.session.execute(
                 select(UserModel).where(UserModel.id == user_id)
             )
             db_user = result.scalars().first()
 
-        return self._to_domain(db_user)
+        return CrudResult(outcome=CrudOutcome.OK, value=self._to_domain(db_user))
 
-    async def delete(self, user_id: int) -> bool:
-        """사용자를 삭제합니다."""
+    async def delete(self, user_id: int) -> CrudResult[None]:
+        """사용자를 삭제합니다 (PR #56: bool → outcome enum)."""
         result = await self.session.execute(
             delete(UserModel).where(UserModel.id == user_id)
         )
         await self.session.commit()
-        return result.rowcount > 0
+        outcome = CrudOutcome.OK if result.rowcount > 0 else CrudOutcome.NOT_FOUND
+        return CrudResult(outcome=outcome)
 
     async def list(self, skip: int = 0, limit: int = 100) -> list[User]:
         """사용자 목록을 조회합니다."""

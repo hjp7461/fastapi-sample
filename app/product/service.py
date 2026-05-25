@@ -9,6 +9,7 @@ from app.core.exceptions import (
     BusinessLogicException,
     NotFoundException,
 )
+from app.core.result import CrudOutcome
 from app.product.domain import NewProduct, Product, ProductCategory
 from app.product.repository import (
     InventoryUpdateOutcome,
@@ -39,29 +40,31 @@ class ProductService:
 
     async def get_product(self, product_id: int) -> Product:
         """ID로 상품을 조회합니다."""
-        product = await self.product_repository.get_by_id(product_id)
-        if not product:
+        result = await self.product_repository.get_by_id(product_id)
+        if result.outcome is CrudOutcome.NOT_FOUND:
             raise NotFoundException(f"Product with ID {product_id} not found")
-        return product
+        assert result.value is not None
+        return result.value
 
     async def update_product(
         self, product_id: int, product_data: dict[str, Any]
     ) -> Product:
         """상품 정보를 업데이트합니다."""
-        product = await self.product_repository.update(product_id, product_data)
-        if not product:
+        result = await self.product_repository.update(product_id, product_data)
+        if result.outcome is CrudOutcome.NOT_FOUND:
             raise NotFoundException(f"Product with ID {product_id} not found")
-
-        return product
+        assert result.value is not None
+        return result.value
 
     async def delete_product(self, product_id: int) -> bool:
         """상품을 삭제합니다."""
         # 삭제 전 존재 확인
-        product = await self.product_repository.get_by_id(product_id)
-        if not product:
+        get_result = await self.product_repository.get_by_id(product_id)
+        if get_result.outcome is CrudOutcome.NOT_FOUND:
             raise NotFoundException(f"Product with ID {product_id} not found")
 
-        return await self.product_repository.delete(product_id)
+        delete_result = await self.product_repository.delete(product_id)
+        return delete_result.outcome is CrudOutcome.OK
 
     async def list_products(
         self,

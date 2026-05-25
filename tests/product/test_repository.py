@@ -9,6 +9,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.result import CrudOutcome
 from app.product.domain import NewProduct, ProductCategory
 from app.product.repository import (
     InventoryUpdateOutcome,
@@ -77,5 +78,6 @@ async def test_update_inventory_returns_insufficient_when_negative(
 
     # 재고는 변화 없음 — 조건부 UPDATE 가 차단
     fresh = await repo.get_by_id(product.id)
-    assert fresh is not None
-    assert fresh.inventory == 2
+    assert fresh.outcome == CrudOutcome.OK
+    assert fresh.value is not None
+    assert fresh.value.inventory == 2
