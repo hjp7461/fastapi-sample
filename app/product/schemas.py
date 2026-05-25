@@ -25,7 +25,19 @@ class ProductBase(BaseModel):
 class ProductCreate(ProductBase):
     """상품 생성 요청."""
 
-    pass
+    # PRD §5.6: PII 안전 — 가공된 sample 상품 (실 상품/SKU 없음).
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "name": "샘플 머그컵",
+                "description": "테스트용 머그컵 (회귀 가드 sample).",
+                "price": "12000.00",
+                "category": "other",
+                "inventory": 50,
+                "is_active": True,
+            }
+        }
+    }
 
 
 class ProductUpdate(BaseModel):
@@ -37,6 +49,15 @@ class ProductUpdate(BaseModel):
     category: ProductCategory | None = None
     inventory: int | None = Field(None, ge=0)
     is_active: bool | None = None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "price": "13500.00",
+                "is_active": True,
+            }
+        }
+    }
 
 
 class ProductResponse(ProductBase):
@@ -50,7 +71,22 @@ class ProductResponse(ProductBase):
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "json_schema_extra": {
+            "example": {
+                "id": 42,
+                "name": "샘플 머그컵",
+                "description": "테스트용 머그컵 (회귀 가드 sample).",
+                "price": "12000.00",
+                "category": "other",
+                "inventory": 50,
+                "is_active": True,
+                "created_at": "2026-05-26T09:00:00Z",
+                "updated_at": "2026-05-26T09:00:00Z",
+            }
+        },
+    }
 
 
 class ProductPublicView(BaseModel):
@@ -68,7 +104,21 @@ class ProductPublicView(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "json_schema_extra": {
+            "example": {
+                "id": 42,
+                "name": "샘플 머그컵",
+                "description": "테스트용 머그컵 (회귀 가드 sample).",
+                "price": "12000.00",
+                "category": "other",
+                "is_active": True,
+                "created_at": "2026-05-26T09:00:00Z",
+                "updated_at": "2026-05-26T09:00:00Z",
+            }
+        },
+    }
 
 
 def build_public_view(product: Product) -> ProductPublicView:
@@ -93,3 +143,5 @@ class ProductInventoryUpdate(BaseModel):
     """상품 재고 업데이트 요청."""
 
     quantity_change: int = Field(..., description="양수: 재고 증가, 음수: 재고 감소")
+
+    model_config = {"json_schema_extra": {"example": {"quantity_change": -3}}}

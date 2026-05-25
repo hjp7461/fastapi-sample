@@ -224,6 +224,10 @@ def _wrap_response_content(
 
     PR #52 idempotent: 이미 `data` property 를 가진 schema 는 그대로 통과
     (PaginatedResponse[T] 등 라우터가 직접 envelope 을 구성한 경우).
+
+    PR #62 (OpenAPI examples): schema wrap 시 inner example 도 `{"data": ...}` 로
+    함께 wrap (idempotent — 이미 envelope 형식이면 skip). 라우터가 `responses=`
+    에 envelope 형식 example 을 직접 적시한 경우 이중 wrap 방지.
     """
     content = response.get("content", {})
     for media_obj in content.values():
@@ -237,6 +241,18 @@ def _wrap_response_content(
             "required": ["data"],
             "properties": {"data": original},
         }
+        # PR #62: inner example 을 envelope 으로 wrap (idempotent)
+        if "example" in media_obj and not _example_is_wrapped(media_obj["example"]):
+            media_obj["example"] = {"data": media_obj["example"]}
+
+
+def _example_is_wrapped(example: Any) -> bool:
+    """example 이 이미 envelope 형식 (`{"data": ...}`) 인지 검사 (PR #62).
+
+    PR #52 의 `_schema_has_data_property` 와 동일한 idempotent 패턴 — dict 이고
+    `data` 키를 가지면 envelope 으로 간주 (이중 wrap 회피).
+    """
+    return isinstance(example, dict) and "data" in example
 
 
 def _schema_has_data_property(
@@ -287,11 +303,24 @@ def _inject_error_responses(schema: dict[str, Any], app: FastAPI) -> None:
                 if status_code not in codes:
                     continue
                 envelope_name, description = meta
-                responses[str(status_code)] = {
-                    "description": description,
-                    "content": {
-                        "application/json": {
-                            "schema": {"$ref": f"#/components/schemas/{envelope_name}"}
-                        }
-                    },
+                # PR #62: 라우터가 `responses=` 로 명시한 example/headers/description
+                # 보존 (merge). schema 만 envelope `$ref` 로 (재)덮어쓰기.
+                existing = responses.get(str(status_code), {})
+                merged_content = {
+                    media_type: {
+                        **media_obj,
+                        "schema": {"$ref": f"#/components/schemas/{envelope_name}"},
+                    }
+                    for media_type, media_obj in existing.get("content", {}).items()
                 }
+                merged_content.setdefault(
+                    "application/json",
+                    {"schema": {"$ref": f"#/components/schemas/{envelope_name}"}},
+                )
+                merged: dict[str, Any] = {
+                    "description": existing.get("description", description),
+                    "content": merged_content,
+                }
+                if "headers" in existing:
+                    merged["headers"] = existing["headers"]
+                responses[str(status_code)] = merged

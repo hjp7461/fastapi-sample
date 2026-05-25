@@ -10,6 +10,12 @@ from fastapi import APIRouter, Depends, Query, status
 from app.api.dependencies import get_optional_current_user
 from app.api.permissions import require_staff_or_admin
 from app.core.openapi import PaginatedResponse
+from app.core.openapi_examples import (
+    ERROR_401_AUTHENTICATION,
+    ERROR_403_AUTHORIZATION,
+    ERROR_404_NOT_FOUND_PRODUCT,
+    ERROR_422_VALIDATION,
+)
 from app.core.pagination import build_meta, resolve_pagination
 from app.di.providers import get_product_service
 from app.product.domain import ProductCategory
@@ -27,6 +33,76 @@ from app.user.domain import User
 router = APIRouter()
 
 
+# PRD §5.2 옵션 C — envelope wrap 후 최종 형식 직접 적시. PII 정책: PRD §5.6.
+_PRODUCT_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "id": 42,
+    "name": "샘플 머그컵",
+    "description": "테스트용 머그컵 (회귀 가드 sample).",
+    "price": "12000.00",
+    "category": "other",
+    "inventory": 50,
+    "is_active": True,
+    "created_at": "2026-05-26T09:00:00Z",
+    "updated_at": "2026-05-26T09:00:00Z",
+}
+
+_PRODUCT_PUBLIC_VIEW_EXAMPLE: dict[str, Any] = {
+    "id": 42,
+    "name": "샘플 머그컵",
+    "description": "테스트용 머그컵 (회귀 가드 sample).",
+    "price": "12000.00",
+    "category": "other",
+    "is_active": True,
+    "created_at": "2026-05-26T09:00:00Z",
+    "updated_at": "2026-05-26T09:00:00Z",
+}
+
+CREATE_PRODUCT_RESPONSE_201_EXAMPLE: dict[str, Any] = {
+    "description": "상품 생성 성공 (envelope 형식)",
+    "content": {"application/json": {"example": {"data": _PRODUCT_RESPONSE_EXAMPLE}}},
+}
+
+UPDATE_PRODUCT_RESPONSE_200_EXAMPLE: dict[str, Any] = {
+    "description": "상품 수정 성공 (envelope 형식)",
+    "content": {
+        "application/json": {
+            "example": {
+                "data": {
+                    **_PRODUCT_RESPONSE_EXAMPLE,
+                    "price": "13500.00",
+                    "updated_at": "2026-05-26T10:30:00Z",
+                }
+            }
+        }
+    },
+}
+
+GET_PRODUCT_RESPONSE_200_EXAMPLE: dict[str, Any] = {
+    "description": (
+        "상품 단건 조회 성공 (anonymous/customer: ProductPublicView, "
+        "staff/admin: ProductResponse)"
+    ),
+    "content": {
+        "application/json": {"example": {"data": _PRODUCT_PUBLIC_VIEW_EXAMPLE}}
+    },
+}
+
+UPDATE_INVENTORY_RESPONSE_200_EXAMPLE: dict[str, Any] = {
+    "description": "재고 변경 성공 (envelope 형식)",
+    "content": {
+        "application/json": {
+            "example": {
+                "data": {
+                    **_PRODUCT_RESPONSE_EXAMPLE,
+                    "inventory": 47,
+                    "updated_at": "2026-05-26T11:15:00Z",
+                }
+            }
+        }
+    },
+}
+
+
 @router.post(
     "/",
     response_model=ProductResponse,
@@ -37,6 +113,12 @@ router = APIRouter()
         "(그 외 403 envelope). SKU 는 unique — 중복 시 409 envelope."
     ),
     tags=["products-admin"],
+    responses={
+        201: CREATE_PRODUCT_RESPONSE_201_EXAMPLE,
+        401: ERROR_401_AUTHENTICATION,
+        403: ERROR_403_AUTHORIZATION,
+        422: ERROR_422_VALIDATION,
+    },
 )
 async def create_product(
     product_in: ProductCreate,
@@ -58,6 +140,10 @@ async def create_product(
         "(inventory 제외) 로 응답 분기."
     ),
     tags=["products-public"],
+    responses={
+        200: GET_PRODUCT_RESPONSE_200_EXAMPLE,
+        404: ERROR_404_NOT_FOUND_PRODUCT,
+    },
 )
 async def get_product_by_id(
     product_id: int,
@@ -87,6 +173,12 @@ async def get_product_by_id(
         "`/inventory` PATCH 사용 권장 (원자성)."
     ),
     tags=["products-admin"],
+    responses={
+        200: UPDATE_PRODUCT_RESPONSE_200_EXAMPLE,
+        401: ERROR_401_AUTHENTICATION,
+        403: ERROR_403_AUTHORIZATION,
+        404: ERROR_404_NOT_FOUND_PRODUCT,
+    },
 )
 async def update_product(
     product_id: int,
@@ -201,6 +293,13 @@ async def list_products(
         "DB row lock 으로 동시성 안전."
     ),
     tags=["products-admin"],
+    responses={
+        200: UPDATE_INVENTORY_RESPONSE_200_EXAMPLE,
+        401: ERROR_401_AUTHENTICATION,
+        403: ERROR_403_AUTHORIZATION,
+        404: ERROR_404_NOT_FOUND_PRODUCT,
+        422: ERROR_422_VALIDATION,
+    },
 )
 async def update_product_inventory(
     product_id: int,
