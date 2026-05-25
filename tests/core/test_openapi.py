@@ -158,6 +158,64 @@ async def test_all_api_endpoints_have_korean_summary(
             )
 
 
+# require_* 가드 ↔ summary 권한 조건 키워드 매핑 (PR #55 표기 정책 정착).
+# 신규 가드 추가 시 본 dict 갱신 의무 (app/api/permissions.py 와 동기화).
+GUARD_SUMMARY_KEYWORDS: dict[str, set[str]] = {
+    "require_admin": {"관리자"},
+    "require_self_or_admin": {"본인", "관리자"},
+    "require_staff_or_admin": {"staff", "admin"},
+}
+
+
+@pytest.mark.asyncio
+async def test_summary_includes_permission_keywords_for_guarded_endpoints(
+    client: AsyncClient,
+) -> None:
+    """`require_*` 가드 의존 endpoint 의 summary 가 권한 조건 키워드 포함.
+
+    PR #55 의 표기 정책 (관리자 / 본인 / staff·admin) 회귀 가드 — 신규 endpoint
+    추가 시 가드는 두었으나 summary 권한 조건 누락 즉시 catch.
+    """
+    from fastapi.routing import APIRoute
+
+    from app.core.openapi_status import _walk_dependants
+    from app.main import app
+
+    response = await client.get("/api/v1/openapi.json")
+    schema = response.json()["data"]
+    paths = schema["paths"]
+
+    for route in app.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        if not route.path.startswith("/api/v1/"):
+            continue
+
+        required_guards = {
+            d.call.__name__
+            for d in _walk_dependants(route.dependant)
+            if d.call is not None
+            and hasattr(d.call, "__name__")
+            and d.call.__name__ in GUARD_SUMMARY_KEYWORDS
+        }
+        if not required_guards:
+            continue
+
+        for method in route.methods:
+            op = paths.get(route.path, {}).get(method.lower())
+            if op is None:
+                continue
+            summary = op.get("summary", "")
+            for guard in required_guards:
+                missing = {
+                    kw for kw in GUARD_SUMMARY_KEYWORDS[guard] if kw not in summary
+                }
+                assert not missing, (
+                    f"{method} {route.path}: 가드 `{guard}` 사용 중인데 "
+                    f"summary={summary!r} 에 권한 키워드 누락: {sorted(missing)}"
+                )
+
+
 @pytest.mark.asyncio
 async def test_paginated_response_schema_not_double_wrapped(
     client: AsyncClient,
