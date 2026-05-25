@@ -18,7 +18,7 @@ from starlette.responses import Response, StreamingResponse
 from starlette.types import ASGIApp
 
 from app.core.context import request_id_var
-from app.core.datetime import utcnow_aware
+from app.core.datetime import format_iso_z, utcnow_aware
 
 HEADER_NAME = "X-Request-ID"
 MAX_LENGTH = 128
@@ -137,7 +137,7 @@ def _build_system_meta() -> dict[str, str]:
       컨텍스트 placeholder) 또는 빈 문자열이면 omit — JSON 노이즈 회피.
       RequestIDMiddleware 가 설정한 정상 ID 만 응답 meta 에 노출.
     """
-    meta: dict[str, str] = {"requested_at": utcnow_aware().isoformat()}
+    meta: dict[str, str] = {"requested_at": format_iso_z(utcnow_aware())}
     request_id = request_id_var.get()
     if request_id and request_id != "-":
         meta["request_id"] = request_id

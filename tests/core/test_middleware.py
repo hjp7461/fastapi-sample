@@ -736,9 +736,7 @@ async def test_success_envelope_idempotent_skips_already_wrapped(
 # ---------------------------------------------------------------------------
 
 
-ISO8601_UTC_PATTERN = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?\+00:00$"
-)
+ISO8601_UTC_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
 
 
 @pytest.mark.asyncio
@@ -856,18 +854,20 @@ async def test_requested_at_is_utc_iso8601(
     client: AsyncClient,
     admin_auth_headers: dict[str, str],
 ) -> None:
-    """본 PR §5.7 #6: meta.requested_at 가 UTC ISO8601 형식.
+    """본 PR §5.7 #6 (E1 갱신): meta.requested_at 가 UTC ISO8601 + `Z` 접미사.
 
-    `+00:00` suffix + `datetime.fromisoformat` round-trip 가능 + tzinfo
-    UTC 검증. `utcnow_aware().isoformat()` 단일 진실원.
+    PR #72 (E1) 로 `+00:00` → `Z` 통일 (Pydantic mode="json" 동등). `Z`
+    suffix + `datetime.fromisoformat` round-trip 가능 + tzinfo UTC 검증.
+    `format_iso_z(utcnow_aware())` 가 단일 진실원.
     """
     from datetime import UTC, datetime
 
     response = await client.get("/api/v1/users/?limit=1", headers=admin_auth_headers)
     requested_at = response.json()["meta"]["requested_at"]
     assert ISO8601_UTC_PATTERN.match(requested_at), (
-        f"ISO8601 +00:00 형식 기대, 실제: {requested_at!r}"
+        f"ISO8601 'Z' 접미사 형식 기대, 실제: {requested_at!r}"
     )
+    # fromisoformat 은 Python 3.11+ 부터 'Z' 직접 지원
     parsed = datetime.fromisoformat(requested_at)
     assert parsed.tzinfo is not None
     assert parsed.utcoffset() == UTC.utcoffset(parsed)
