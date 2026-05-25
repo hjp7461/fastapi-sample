@@ -35,6 +35,22 @@ class UserCreate(UserBase):
             raise ValueError("비밀번호가 일치하지 않습니다")
         return v
 
+    # PRD §5.6: PII 안전 — *@example.com / dummy 비밀번호 / 한국 통상 가명.
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "email": "newbie@example.com",
+                "username": "newbie",
+                "first_name": "길동",
+                "last_name": "홍",
+                "role": "customer",
+                "is_active": True,
+                "password": "dummy-secret-please-change",
+                "password_confirm": "dummy-secret-please-change",
+            }
+        }
+    }
+
 
 class UserUpdate(BaseModel):
     """사용자 정보 업데이트 요청."""
@@ -47,6 +63,15 @@ class UserUpdate(BaseModel):
     is_active: bool | None = None
     password: str | None = Field(None, min_length=8, max_length=64)
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "first_name": "길동",
+                "last_name": "홍",
+            }
+        }
+    }
+
 
 class UserResponse(UserBase):
     """본인 조회 응답 — 전체 PII 노출 (email, 이름 포함).
@@ -58,7 +83,22 @@ class UserResponse(UserBase):
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "json_schema_extra": {
+            "example": {
+                "id": 1,
+                "email": "newbie@example.com",
+                "username": "newbie",
+                "first_name": "길동",
+                "last_name": "홍",
+                "role": "customer",
+                "is_active": True,
+                "created_at": "2026-05-26T09:00:00Z",
+                "updated_at": "2026-05-26T09:00:00Z",
+            }
+        },
+    }
 
 
 class UserAdminView(BaseModel):
@@ -77,7 +117,20 @@ class UserAdminView(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "json_schema_extra": {
+            "example": {
+                "id": 2,
+                "username": "veteran",
+                "email": "v***@e***.com",
+                "role": "staff",
+                "is_active": True,
+                "created_at": "2026-05-26T09:00:00Z",
+                "updated_at": "2026-05-26T09:00:00Z",
+            }
+        },
+    }
 
 
 class UserSummary(BaseModel):
@@ -92,7 +145,18 @@ class UserSummary(BaseModel):
     is_active: bool
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "json_schema_extra": {
+            "example": {
+                "id": 1,
+                "username": "newbie",
+                "role": "customer",
+                "is_active": True,
+                "created_at": "2026-05-26T09:00:00Z",
+            }
+        },
+    }
 
 
 def build_admin_view(user: User) -> UserAdminView:
@@ -129,6 +193,19 @@ class Token(BaseModel):
 
     access_token: str
     token_type: str = "bearer"
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "access_token": (
+                    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+                    "eyJzdWIiOjEsImV4cCI6MTkwMDAwMDAwMH0."
+                    "SAMPLE_SIGNATURE_NOT_A_REAL_TOKEN"
+                ),
+                "token_type": "bearer",
+            }
+        }
+    }
 
 
 class TokenPayload(BaseModel):

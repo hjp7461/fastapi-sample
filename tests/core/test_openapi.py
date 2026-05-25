@@ -8,7 +8,12 @@
 - 예외: 204 No Content, OAUTH2_EXCEPTION_PATHS (`/api/v1/users/token`)
 - error envelope 일괄 주입 (401/403/404/400/422)
 - components/schemas 에 envelope 모델 등록
+- PR #62: 8 endpoint x request/response example 노출 + PII 안전
 """
+
+import re
+from collections.abc import Iterator
+from typing import Any
 
 import pytest
 from httpx import AsyncClient
@@ -416,3 +421,208 @@ async def test_pagination_meta_optional_fields_in_schema(
     assert required == {"total"}, (
         f"required 가 {required} — total 만 필수여야 함 (Option A)"
     )
+
+
+# -----------------------------------------------------------------------------
+# PR #62 — OpenAPI examples 회귀 가드 (PRD §5.5)
+# -----------------------------------------------------------------------------
+
+
+def _resolve_request_body_example(
+    op: dict[str, Any], components: dict[str, Any]
+) -> Any:
+    """request body 의 example 을 다중 위치에서 resolve.
+
+    Pydantic v2 의 `json_schema_extra.example` 은 components 의 schema 에
+    `example` 필드로 노출됨 (옵션 A). 라우터의 `responses=` C 옵션은
+    content 의 `example` 으로 직접 노출됨. 양쪽 위치 모두 시도.
+    """
+    rb = op.get("requestBody", {}).get("content", {}).get("application/json", {})
+    if "example" in rb:
+        return rb["example"]
+    schema = rb.get("schema", {})
+    if "example" in schema:
+        return schema["example"]
+    if "$ref" in schema:
+        ref_name = schema["$ref"].rsplit("/", 1)[-1]
+        target = components.get(ref_name, {})
+        if "example" in target:
+            return target["example"]
+    return None
+
+
+def _iter_all_examples(
+    openapi: dict[str, Any],
+) -> Iterator[tuple[str, str, str, Any]]:
+    """모든 path x method x (request/response) x example 순회 (PRD §5.5).
+
+    request body 는 content.example 우선, 없으면 schema.example, 다시 없으면
+    components 의 `$ref` target.example 까지 따라간다 (Pydantic v2 옵션 A 호환).
+    """
+    components = openapi.get("components", {}).get("schemas", {})
+    for path, methods in openapi.get("paths", {}).items():
+        for method, op in methods.items():
+            if method not in {"get", "post", "put", "patch", "delete"}:
+                continue
+            rb_example = _resolve_request_body_example(op, components)
+            if rb_example is not None:
+                yield path, method, "request", rb_example
+            for status_code, resp in op.get("responses", {}).items():
+                content = resp.get("content", {}).get("application/json", {})
+                if "example" in content:
+                    yield path, method, f"response_{status_code}", content["example"]
+
+
+async def _get_openapi(client: AsyncClient) -> dict[str, Any]:
+    response = await client.get("/api/v1/openapi.json")
+    body = response.json()
+    if isinstance(body, dict) and "data" in body:
+        result: dict[str, Any] = body["data"]
+        return result
+    assert isinstance(body, dict)
+    return body
+
+
+@pytest.mark.asyncio
+async def test_register_request_body_example_present(client: AsyncClient) -> None:
+    """PR #62 PRD §5.5 #1 — `POST /users/` 의 request body example 노출.
+
+    Pydantic v2 `json_schema_extra.example` 가 components/schemas/UserCreate 의
+    `example` 필드로 노출되어야 하며 `email` 필드를 포함하고 `@example.com`
+    도메인을 사용해야 한다 (PII 안전).
+    """
+    openapi = await _get_openapi(client)
+    components = openapi["components"]["schemas"]
+    op = openapi["paths"]["/api/v1/users/"]["post"]
+    ex = _resolve_request_body_example(op, components)
+    assert ex is not None, "register request body example 누락"
+    assert "email" in ex
+    assert ex["email"].endswith("@example.com"), (
+        f"email 도메인 PII 위반: {ex['email']!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_register_response_201_example_envelope(client: AsyncClient) -> None:
+    """PR #62 PRD §5.5 #2 — `POST /users/` 의 201 example 이 envelope 형식."""
+    openapi = await _get_openapi(client)
+    ex = openapi["paths"]["/api/v1/users/"]["post"]["responses"]["201"]["content"][
+        "application/json"
+    ]["example"]
+    assert "data" in ex, f"201 example envelope wrap 누락: {ex}"
+    assert "email" in ex["data"]
+
+
+@pytest.mark.asyncio
+async def test_login_response_401_example_envelope(client: AsyncClient) -> None:
+    """PR #62 PRD §5.5 #3 — `POST /users/token` 의 401 example 이 detail.code 형식.
+
+    customizer 의 merge 동작으로 라우터가 명시한 example/headers 보존되어야 함.
+    """
+    openapi = await _get_openapi(client)
+    resp401 = openapi["paths"]["/api/v1/users/token"]["post"]["responses"]["401"]
+    ex = resp401["content"]["application/json"]["example"]
+    assert ex["detail"]["code"] == "authentication_error"
+    assert "message" in ex["detail"]
+    # WWW-Authenticate 헤더 정의 (RFC 7235) 보존
+    assert "WWW-Authenticate" in resp401.get("headers", {}), (
+        "customizer merge 누락: WWW-Authenticate 헤더 손실"
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_users_response_200_example_pagination(
+    client: AsyncClient,
+) -> None:
+    """PR #62 PRD §5.5 #4 — `GET /users/` 의 200 example 이 PR #52 envelope."""
+    openapi = await _get_openapi(client)
+    ex = openapi["paths"]["/api/v1/users/"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["example"]
+    assert isinstance(ex["data"], list)
+    meta = ex["meta"]
+    assert set(meta.keys()) >= {"total", "skip", "limit"}, (
+        f"meta 키 누락: {set(meta.keys())}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_inventory_response_422_example_errors_array(
+    client: AsyncClient,
+) -> None:
+    """PR #62 PRD §5.5 #5 — `PATCH /products/{id}/inventory` 의 422 example 형식.
+
+    `detail.errors` 가 list 이고 각 항목에 `loc`/`msg`/`type` 키 보유.
+    """
+    openapi = await _get_openapi(client)
+    ex = openapi["paths"]["/api/v1/products/{product_id}/inventory"]["patch"][
+        "responses"
+    ]["422"]["content"]["application/json"]["example"]
+    errors = ex["detail"]["errors"]
+    assert isinstance(errors, list)
+    assert errors, "errors 배열이 비어있음"
+    for item in errors:
+        assert set(item.keys()) >= {"loc", "msg", "type"}, (
+            f"422 errors[] 항목 키 누락: {item}"
+        )
+
+
+_EMAIL_RE = re.compile(r"[\w.+-]+@([\w-]+\.[\w.-]+)")
+_FORBIDDEN_PASSWORD_PATTERNS = {
+    "password123",
+    "qwerty",
+    "admin123",
+    "123456",
+    "letmein",
+}
+_ALLOWED_EMAIL_DOMAINS = {"example.com", "example.org", "example.net"}
+
+
+@pytest.mark.asyncio
+async def test_example_pii_safe(client: AsyncClient) -> None:
+    """PR #62 PRD §5.5 #6 + §5.6 — 모든 example 의 email/password PII 안전.
+
+    검증:
+    - 모든 email 도메인 ∈ {example.com, example.org, example.net} (RFC 6761)
+    - password 류 문자열에 anti-pattern (`password123`, `qwerty`, `admin123` 등)
+      없음. `dummy-secret-please-change` / `dummy_password` / `secret_test_pw`
+      등 명시적 더미는 허용 (PRD §5.6 dummy 키워드).
+    """
+    openapi = await _get_openapi(client)
+    for path, method, kind, ex in _iter_all_examples(openapi):
+        flat = repr(ex)
+        # 1. email 도메인 검증
+        for match in _EMAIL_RE.finditer(flat):
+            domain = match.group(1)
+            assert domain in _ALLOWED_EMAIL_DOMAINS, (
+                f"{path} {method} {kind}: PII 위반 email 도메인 {domain!r}"
+            )
+        # 2. anti-pattern password 검증 (대소문자 무관)
+        flat_lower = flat.lower()
+        for forbidden in _FORBIDDEN_PASSWORD_PATTERNS:
+            assert forbidden not in flat_lower, (
+                f"{path} {method} {kind}: anti-pattern 비밀번호 {forbidden!r} 노출"
+            )
+
+
+@pytest.mark.asyncio
+async def test_customizer_example_idempotent_wrap(client: AsyncClient) -> None:
+    """PR #62 PRD §5.3 — customizer 의 example wrap 가드 idempotent.
+
+    라우터가 `{"data": {...}}` 형식으로 직접 적시한 example 을 customizer 가
+    이중 wrap (`{"data": {"data": {...}}}`) 하지 않음을 검증.
+    """
+    openapi = await _get_openapi(client)
+    ex = openapi["paths"]["/api/v1/users/"]["post"]["responses"]["201"]["content"][
+        "application/json"
+    ]["example"]
+    assert "data" in ex
+    inner = ex["data"]
+    # inner data 가 또 dict 이면서 "data" 키만 있고 실제 모델 필드 (email 등)
+    # 없으면 이중 wrap (회귀).
+    assert not (
+        isinstance(inner, dict)
+        and "data" in inner
+        and "email" not in inner
+        and "id" not in inner
+    ), "example 이 이중 wrap 됨 — customizer idempotent 가드 회귀"

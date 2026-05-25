@@ -12,6 +12,12 @@ from app.api.dependencies import get_current_user
 from app.api.permissions import require_admin, require_self_or_admin
 from app.core.exceptions import AuthenticationException
 from app.core.openapi import PaginatedResponse
+from app.core.openapi_examples import (
+    ERROR_401_AUTHENTICATION,
+    ERROR_403_AUTHORIZATION,
+    ERROR_404_NOT_FOUND_USER,
+    ERROR_422_VALIDATION,
+)
 from app.core.pagination import build_meta, resolve_pagination
 from app.di.providers import get_user_service
 from app.user.domain import User
@@ -30,6 +36,76 @@ from app.user.service import UserService
 router = APIRouter()
 
 
+# PRD §5.2 옵션 C — envelope wrap 후 최종 형식 직접 적시 (Swagger UI prefill).
+# 모든 example PII 는 PRD §5.6 정책 준수 (*@example.com / dummy / 가명).
+_USER_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "id": 1,
+    "email": "newbie@example.com",
+    "username": "newbie",
+    "first_name": "길동",
+    "last_name": "홍",
+    "role": "customer",
+    "is_active": True,
+    "created_at": "2026-05-26T09:00:00Z",
+    "updated_at": "2026-05-26T09:00:00Z",
+}
+
+CREATE_USER_RESPONSE_201_EXAMPLE: dict[str, Any] = {
+    "description": "회원가입 성공 (envelope 형식)",
+    "content": {"application/json": {"example": {"data": _USER_RESPONSE_EXAMPLE}}},
+}
+
+LOGIN_RESPONSE_200_EXAMPLE: dict[str, Any] = {
+    "description": "OAuth2 로그인 성공 (RFC 6749 — envelope 비적용 raw 형식)",
+    "content": {
+        "application/json": {
+            "example": {
+                "access_token": (
+                    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+                    "eyJzdWIiOjEsImV4cCI6MTkwMDAwMDAwMH0."
+                    "SAMPLE_SIGNATURE_NOT_A_REAL_TOKEN"
+                ),
+                "token_type": "bearer",
+            }
+        }
+    },
+}
+
+GET_USER_RESPONSE_200_EXAMPLE: dict[str, Any] = {
+    "description": (
+        "사용자 단건 조회 성공 (본인: UserResponse / 관리자가 타인: UserAdminView)"
+    ),
+    "content": {"application/json": {"example": {"data": _USER_RESPONSE_EXAMPLE}}},
+}
+
+LIST_USERS_RESPONSE_200_EXAMPLE: dict[str, Any] = {
+    "description": "사용자 목록 조회 성공 (pagination envelope — PR #52)",
+    "content": {
+        "application/json": {
+            "example": {
+                "data": [
+                    {
+                        "id": 1,
+                        "username": "newbie",
+                        "role": "customer",
+                        "is_active": True,
+                        "created_at": "2026-05-26T09:00:00Z",
+                    },
+                    {
+                        "id": 2,
+                        "username": "veteran",
+                        "role": "staff",
+                        "is_active": True,
+                        "created_at": "2026-05-26T09:00:00Z",
+                    },
+                ],
+                "meta": {"total": 2, "skip": 0, "limit": 100},
+            }
+        }
+    },
+}
+
+
 @router.post(
     "/",
     response_model=UserResponse,
@@ -41,6 +117,10 @@ router = APIRouter()
         "비밀번호는 해시 저장되며 응답에 포함되지 않습니다."
     ),
     tags=["users-auth"],
+    responses={
+        201: CREATE_USER_RESPONSE_201_EXAMPLE,
+        422: ERROR_422_VALIDATION,
+    },
 )
 async def create_user(
     user_in: UserCreate, user_service: UserService = Depends(get_user_service)
@@ -97,6 +177,10 @@ async def update_current_user(
         "응답은 RFC 6749 표준 형식 (envelope wrap 제외)."
     ),
     tags=["users-auth"],
+    responses={
+        200: LOGIN_RESPONSE_200_EXAMPLE,
+        401: ERROR_401_AUTHENTICATION,
+    },
 )
 async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -124,6 +208,12 @@ async def login_for_access_token(
         "`UserAdminView` (이메일 마스킹 + 이름 제외) 로 응답 분기."
     ),
     tags=["users-admin"],
+    responses={
+        200: GET_USER_RESPONSE_200_EXAMPLE,
+        401: ERROR_401_AUTHENTICATION,
+        403: ERROR_403_AUTHORIZATION,
+        404: ERROR_404_NOT_FOUND_USER,
+    },
 )
 async def get_user_by_id(
     user_id: int,
@@ -154,6 +244,11 @@ async def get_user_by_id(
         "`{data, meta: {total, skip, limit}}` 형식."
     ),
     tags=["users-admin"],
+    responses={
+        200: LIST_USERS_RESPONSE_200_EXAMPLE,
+        401: ERROR_401_AUTHENTICATION,
+        403: ERROR_403_AUTHORIZATION,
+    },
 )
 async def list_users(
     skip: int = Query(0, ge=0, description="페이징 offset (offset 모드, 0 이상)"),
