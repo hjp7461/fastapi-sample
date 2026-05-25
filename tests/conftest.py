@@ -18,6 +18,11 @@ import os
 #   ~60x bcrypt 가속.
 os.environ.setdefault("BCRYPT_ROUNDS", "6")
 
+# SENTRY_DSN 강제 빈 값 — pytest 가 운영 .env 의 DSN 으로 외부 전송하는
+# 사고 차단 (`app.core.observability.setup_sentry` 가 빈 값 시 no-op).
+# 의도적 활성화 검증은 monkeypatch + mock transport 로 격리 (BCRYPT 패턴 재사용).
+os.environ.setdefault("SENTRY_DSN", "")
+
 from collections.abc import AsyncIterator
 from typing import Any
 

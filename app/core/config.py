@@ -49,6 +49,28 @@ class Settings(BaseSettings):
     LOG_FILE_ROTATION: str = os.getenv("LOG_FILE_ROTATION", "10 MB")
     LOG_FILE_RETENTION: str = os.getenv("LOG_FILE_RETENTION", "7 days")
 
+    # 관측성 설정 — Sentry (app/core/observability.py::setup_sentry 가 참조).
+    # default 는 비활성 (SENTRY_DSN 빈 값) → 개발/테스트 영향 0.
+    # 운영 활성화는 .env 의 DSN 설정 + sample_rate 조정만 필요.
+    SENTRY_DSN: str = os.getenv("SENTRY_DSN", "")
+    SENTRY_ENVIRONMENT: str = os.getenv("SENTRY_ENVIRONMENT", "development")
+    SENTRY_TRACES_SAMPLE_RATE: float = Field(
+        default=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0")),
+        ge=0.0,
+        le=1.0,
+        description="Sentry Performance — 0.0 비활성, 운영 권장 0.1, staging 1.0",
+    )
+    SENTRY_PROFILES_SAMPLE_RATE: float = Field(
+        default=float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.0")),
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Sentry Profiling — 0.0 비활성. Performance 가 활성화된 경우만 수집"
+        ),
+    )
+    SENTRY_RELEASE: str | None = os.getenv("SENTRY_RELEASE") or None
+    SENTRY_SEND_PII: bool = os.getenv("SENTRY_SEND_PII", "false").lower() == "true"
+
     # CORS 설정
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",  # React 앱

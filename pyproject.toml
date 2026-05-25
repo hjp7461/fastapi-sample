@@ -58,6 +58,11 @@ dependencies = [
 
     # 로깅
     "loguru>=0.7.0",
+
+    # 관측성 — Sentry (Error + Performance + Profiling).
+    # DSN 빈 값 시 setup_sentry() 가 no-op 이라 dev/test 영향 없음.
+    # FastAPI/Starlette/Loguru integration 자동.
+    "sentry-sdk[fastapi]>=2.0",
 ]
 
 [project.optional-dependencies]
