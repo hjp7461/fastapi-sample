@@ -217,6 +217,85 @@ async def test_summary_includes_permission_keywords_for_guarded_endpoints(
 
 
 @pytest.mark.asyncio
+async def test_all_api_endpoints_have_korean_description(
+    client: AsyncClient,
+) -> None:
+    """모든 /api/v1/ endpoint 에 한국어 description 명시.
+
+    docstring fallback (영문 함수명 자동 생성 / 빈 docstring) 차단 —
+    신규 endpoint 추가 시 description 누락 즉시 catch. PR #55 의 summary
+    한국어 가드 패턴 복제 (서로 다른 표면, 동일 정책).
+    """
+    response = await client.get("/api/v1/openapi.json")
+    schema = response.json()["data"]
+    api_prefix = "/api/v1/"
+    for path, methods in schema["paths"].items():
+        if not path.startswith(api_prefix):
+            continue
+        for method, op in methods.items():
+            if method.lower() not in {"get", "post", "put", "patch", "delete"}:
+                continue
+            description = op.get("description", "")
+            assert description, f"{method.upper()} {path}: description 누락"
+            assert any("가" <= c <= "힣" for c in description), (
+                f"{method.upper()} {path}: description={description!r} — "
+                "docstring fallback 의심, 한국어로 명시 필요"
+            )
+
+
+@pytest.mark.asyncio
+async def test_description_includes_permission_keywords_for_guarded_endpoints(
+    client: AsyncClient,
+) -> None:
+    """`require_*` 가드 의존 endpoint 의 description 이 권한 조건 키워드 포함.
+
+    PR #60 의 summary 권한 키워드 가드를 description 에도 적용 — description
+    상에서도 권한 조건이 명시되어야 외부 API 문서 (Swagger UI / Redoc) 에서
+    소비자가 권한 요구사항을 즉시 인지 가능. `GUARD_SUMMARY_KEYWORDS` dict
+    재사용 (별도 dict 신설 0, summary + description 단일 진실원).
+    """
+    from fastapi.routing import APIRoute
+
+    from app.core.openapi_status import _walk_dependants
+    from app.main import app
+
+    response = await client.get("/api/v1/openapi.json")
+    schema = response.json()["data"]
+    paths = schema["paths"]
+
+    for route in app.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        if not route.path.startswith("/api/v1/"):
+            continue
+
+        required_guards = {
+            d.call.__name__
+            for d in _walk_dependants(route.dependant)
+            if d.call is not None
+            and hasattr(d.call, "__name__")
+            and d.call.__name__ in GUARD_SUMMARY_KEYWORDS
+        }
+        if not required_guards:
+            continue
+
+        for method in route.methods:
+            op = paths.get(route.path, {}).get(method.lower())
+            if op is None:
+                continue
+            description = op.get("description", "")
+            for guard in required_guards:
+                missing = {
+                    kw for kw in GUARD_SUMMARY_KEYWORDS[guard] if kw not in description
+                }
+                assert not missing, (
+                    f"{method} {route.path}: 가드 `{guard}` 사용 중인데 "
+                    f"description={description!r} 에 권한 키워드 누락: "
+                    f"{sorted(missing)}"
+                )
+
+
+@pytest.mark.asyncio
 async def test_paginated_response_schema_not_double_wrapped(
     client: AsyncClient,
 ) -> None:
