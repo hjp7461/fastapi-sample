@@ -70,19 +70,32 @@ class ValidationErrorEnvelope(BaseModel):
 
 
 class PaginationMeta(BaseModel):
-    """offset 기반 페이징 meta (PR #52)."""
+    """페이징 meta — offset / page 모드 양쪽 표현 (PR #52 도입, 듀얼 모드 확장).
+
+    offset 모드: `{total, skip, limit}` — PR #52 동일.
+    page 모드: `{total, page, per_page, total_pages}` — page 기반 듀얼 모드.
+
+    `app/core/pagination.py::build_meta` 가 mode 별 필요한 키만 채워 응답에
+    직렬화 — Pydantic 모델은 검증/스키마 표현만 담당 (모든 필드 Optional,
+    OpenAPI 에는 양쪽 표현 가능). Option A (단일 모델 + Optional 필드) 채택.
+    """
 
     total: int
-    skip: int
-    limit: int
+    # offset 모드 필드
+    skip: int | None = None
+    limit: int | None = None
+    # page 모드 필드
+    page: int | None = None
+    per_page: int | None = None
+    total_pages: int | None = None
 
 
 class PaginatedResponse(BaseModel, Generic[T]):
-    """list endpoint 응답 envelope (PR #52).
+    """list endpoint 응답 envelope (PR #52, 듀얼 모드 확장).
 
     응답 형식: `{"data": [...T], "meta": {...PaginationMeta}}` — middleware /
     OpenAPI customizer 의 idempotent 룰 (응답 body / schema 가 이미 `data` 키
-    보유 시 wrap skip) 로 이중 wrap 회피.
+    보유 시 wrap skip) 로 이중 wrap 회피. meta 는 mode 별 필드 집합 가변.
     """
 
     data: list[T]

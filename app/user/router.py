@@ -12,6 +12,7 @@ from app.api.dependencies import get_current_user
 from app.api.permissions import require_admin, require_self_or_admin
 from app.core.exceptions import AuthenticationException
 from app.core.openapi import PaginatedResponse
+from app.core.pagination import build_meta, resolve_pagination
 from app.di.providers import get_user_service
 from app.user.domain import User
 from app.user.schemas import (
@@ -139,6 +140,7 @@ async def get_user_by_id(
 @router.get(
     "/",
     response_model=PaginatedResponse[UserSummary],
+    response_model_exclude_none=True,
     summary="사용자 목록 조회 (관리자 전용)",
     description=(
         "사용자 목록을 페이지 단위로 조회합니다. **관리자 전용** "
@@ -148,18 +150,45 @@ async def get_user_by_id(
     ),
 )
 async def list_users(
-    skip: int = Query(0, ge=0, description="페이징 offset (0 이상)"),
-    limit: int = Query(100, ge=1, le=1000, description="페이지 크기 (1~1000)"),
+    skip: int = Query(0, ge=0, description="페이징 offset (offset 모드, 0 이상)"),
+    limit: int = Query(
+        100, ge=1, le=1000, description="페이지 크기 (offset 모드, 1~1000)"
+    ),
+    page: int | None = Query(
+        None, ge=1, description="페이지 번호 (1-indexed, page 모드)"
+    ),
+    per_page: int | None = Query(
+        None,
+        ge=1,
+        le=1000,
+        description="페이지당 항목 수 (page 모드, 1~1000)",
+    ),
     _: Any = Depends(require_admin),
     user_service: UserService = Depends(get_user_service),
 ) -> Any:
     """사용자 목록을 조회합니다. 관리자 전용.
 
     응답은 `UserSummary` (PII 0건) — 목록 페이지에서 이메일/이름 무차별 노출 차단.
-    PR #52: pagination meta envelope (`{data, meta: {total, skip, limit}}`).
+
+    페이징 듀얼 모드 (PR ##):
+    - offset 모드 (default, `?skip=&limit=`): meta = {total, skip, limit}
+    - page 모드 (`?page=&per_page=`): meta = {total, page, per_page, total_pages}
+    - 동시 제공 시 page 우선 (skip/limit silent 무시).
     """
-    users, total = await user_service.list_users(skip=skip, limit=limit)
+    effective_skip, effective_limit, mode = resolve_pagination(
+        skip=skip, limit=limit, page=page, per_page=per_page
+    )
+    users, total = await user_service.list_users(
+        skip=effective_skip, limit=effective_limit
+    )
     return {
         "data": [build_summary(u) for u in users],
-        "meta": {"total": total, "skip": skip, "limit": limit},
+        "meta": build_meta(
+            total=total,
+            mode=mode,
+            skip=effective_skip,
+            limit=effective_limit,
+            page=page,
+            per_page=per_page,
+        ),
     }

@@ -750,3 +750,150 @@ async def test_list_users_meta_total_matches_actual_count(
     assert isinstance(body["meta"]["total"], int)
     assert body["meta"]["total"] == len(body["data"])
     assert body["meta"]["total"] >= 2  # admin + test_user
+
+
+@pytest.mark.asyncio
+async def test_list_users_page_mode_first_page(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    test_user: dict[str, Any],
+) -> None:
+    """PRD §5.6 #2: page=1&per_page=10 → 첫 페이지 + page 모드 meta.
+
+    page 모드 응답은 `{total, page, per_page, total_pages}` 형식 —
+    offset 모드 필드 (skip/limit) 는 포함되지 않아야 함 (`build_meta` 의 mode 분기).
+    """
+    response = await client.get(
+        "/api/v1/users/?page=1&per_page=10", headers=admin_auth_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "data" in body
+    assert "meta" in body
+    meta = body["meta"]
+    assert meta["page"] == 1
+    assert meta["per_page"] == 10
+    assert isinstance(meta["total"], int)
+    assert isinstance(meta["total_pages"], int)
+    # offset 모드 필드 미포함 (build_meta 의 mode 분기)
+    assert "skip" not in meta
+    assert "limit" not in meta
+
+
+@pytest.mark.asyncio
+async def test_list_users_page_over_total_returns_empty(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+) -> None:
+    """PRD §5.6 #4: page=9999 → 200 + data=[], total_pages 는 실제 값."""
+    response = await client.get(
+        "/api/v1/users/?page=9999&per_page=10", headers=admin_auth_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data"] == []
+    assert body["meta"]["page"] == 9999
+    assert body["meta"]["per_page"] == 10
+    # total_pages 는 실제 DB 행 기반 (admin 1명이라도 1, 더 적으면 0)
+    assert isinstance(body["meta"]["total_pages"], int)
+    assert body["meta"]["total_pages"] >= 0
+
+
+@pytest.mark.parametrize(
+    ("params", "expected_status"),
+    [
+        ({"page": 0, "per_page": 10}, 422),  # PRD §5.6 #6 page=0 거부
+        ({"page": -1, "per_page": 10}, 422),  # ge=1 가드
+        ({"page": 1, "per_page": 0}, 422),  # per_page ge=1
+        ({"page": 1, "per_page": 1001}, 422),  # PRD §5.6 #5 per_page 상한
+        ({"page": 1, "per_page": 1000}, 200),  # 경계값 OK
+    ],
+)
+@pytest.mark.asyncio
+async def test_list_users_page_mode_query_constraints(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    params: dict[str, int],
+    expected_status: int,
+) -> None:
+    """PRD §5.6 #5, #6: page/per_page Query 제약 회귀 가드."""
+    response = await client.get(
+        "/api/v1/users/", headers=admin_auth_headers, params=params
+    )
+    assert response.status_code == expected_status
+    if expected_status == 422:
+        assert response.json()["detail"]["code"] == "request_validation_error"
+
+
+@pytest.mark.asyncio
+async def test_list_users_both_provided_page_wins(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+) -> None:
+    """PRD §1.4 / §5.6 #7: page + skip/limit 동시 제공 → page 우선.
+
+    skip=999 가 적용됐다면 data 비었을 것 (DB 행 < 999). page=2 응답은
+    offset 모드 필드 (skip/limit) 미포함 — page 우선 분기 회귀 가드.
+    """
+    response = await client.get(
+        "/api/v1/users/?page=2&per_page=10&skip=999&limit=999",
+        headers=admin_auth_headers,
+    )
+    assert response.status_code == 200
+    meta = response.json()["meta"]
+    assert meta["page"] == 2
+    assert meta["per_page"] == 10
+    assert "skip" not in meta
+    assert "limit" not in meta
+
+
+@pytest.mark.asyncio
+async def test_list_users_offset_mode_regression(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+) -> None:
+    """PRD §5.6 #8: skip/limit 만 제공 시 PR #52 동일 meta 회귀.
+
+    page 모드 필드 (page/per_page/total_pages) 가 응답에 새지 않아야 함 —
+    `build_meta` 의 offset 분기 가드.
+    """
+    response = await client.get(
+        "/api/v1/users/?skip=0&limit=20", headers=admin_auth_headers
+    )
+    assert response.status_code == 200
+    meta = response.json()["meta"]
+    assert set(meta.keys()) == {"total", "skip", "limit"}
+    assert meta["skip"] == 0
+    assert meta["limit"] == 20
+
+
+@pytest.mark.asyncio
+async def test_list_users_page_last_page(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    test_user: dict[str, Any],
+) -> None:
+    """PRD §5.6 #3: 마지막 페이지 — len(data) ≤ per_page 이고 page == total_pages.
+
+    per_page=1 로 강제해서 admin + test_user 2명 → total_pages=2, page=2 응답 검증.
+    """
+    head = await client.get(
+        "/api/v1/users/?page=1&per_page=1", headers=admin_auth_headers
+    )
+    assert head.status_code == 200
+    head_meta = head.json()["meta"]
+    total = head_meta["total"]
+    total_pages = head_meta["total_pages"]
+    assert total >= 2
+    assert total_pages == total  # per_page=1 이므로 total_pages == total
+
+    response = await client.get(
+        f"/api/v1/users/?page={total_pages}&per_page=1",
+        headers=admin_auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert 1 <= len(body["data"]) <= 1
+    assert body["meta"]["page"] == total_pages
+    assert body["meta"]["per_page"] == 1
+    assert body["meta"]["total_pages"] == total_pages
