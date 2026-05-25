@@ -855,16 +855,23 @@ async def test_list_users_offset_mode_regression(
     """PRD §5.6 #8: skip/limit 만 제공 시 PR #52 동일 meta 회귀.
 
     page 모드 필드 (page/per_page/total_pages) 가 응답에 새지 않아야 함 —
-    `build_meta` 의 offset 분기 가드.
+    `build_meta` 의 offset 분기 가드. 본 PR (응답 meta 확장) 도입 이후
+    시스템 필드 (`requested_at`, `request_id`) 가 추가되지만 pagination
+    필드는 보존 (setdefault — 덮어쓰기 X).
     """
     response = await client.get(
         "/api/v1/users/?skip=0&limit=20", headers=admin_auth_headers
     )
     assert response.status_code == 200
     meta = response.json()["meta"]
-    assert set(meta.keys()) == {"total", "skip", "limit"}
+    # pagination 필드 (PR #52) 보존
+    assert {"total", "skip", "limit"}.issubset(meta.keys())
     assert meta["skip"] == 0
     assert meta["limit"] == 20
+    # page 모드 필드 누수 방지 (`build_meta` 의 offset 분기 가드)
+    assert "page" not in meta
+    assert "per_page" not in meta
+    assert "total_pages" not in meta
 
 
 @pytest.mark.asyncio

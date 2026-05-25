@@ -9,7 +9,7 @@ import json
 import re
 import time
 import uuid
-from typing import cast
+from typing import Any, cast
 
 from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -18,6 +18,7 @@ from starlette.responses import Response, StreamingResponse
 from starlette.types import ASGIApp
 
 from app.core.context import request_id_var
+from app.core.datetime import utcnow_aware
 
 HEADER_NAME = "X-Request-ID"
 MAX_LENGTH = 128
@@ -128,14 +129,51 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
 OAUTH2_EXCEPTION_PATHS = frozenset({"/api/v1/users/token"})
 
 
-class SuccessEnvelopeMiddleware(BaseHTTPMiddleware):
-    """2xx JSON 응답을 `{"data": <payload>}` envelope 으로 wrap (PR #49).
+def _build_system_meta() -> dict[str, str]:
+    """시스템 meta (requested_at + request_id) 생성 (본 PR).
 
-    예외 (비적용):
+    - `requested_at`: 항상 노출 (UTC ISO8601, `+00:00` suffix).
+    - `request_id`: `request_id_var` contextvar 값. 기본값 `"-"` (요청 외
+      컨텍스트 placeholder) 또는 빈 문자열이면 omit — JSON 노이즈 회피.
+      RequestIDMiddleware 가 설정한 정상 ID 만 응답 meta 에 노출.
+    """
+    meta: dict[str, str] = {"requested_at": utcnow_aware().isoformat()}
+    request_id = request_id_var.get()
+    if request_id and request_id != "-":
+        meta["request_id"] = request_id
+    return meta
+
+
+def _inject_system_meta(body: dict[str, Any]) -> dict[str, Any]:
+    """이미 envelope 인 응답의 meta 에 시스템 필드 주입 (본 PR).
+
+    - meta dict 존재 시 `setdefault` → 기존 키 (pagination 등) 보호.
+    - meta 가 없으면 신규 dict 추가.
+    - body 는 in-place 갱신 후 그대로 반환.
+    """
+    system_meta = _build_system_meta()
+    existing_meta = body.get("meta")
+    if isinstance(existing_meta, dict):
+        for key, value in system_meta.items():
+            existing_meta.setdefault(key, value)
+    else:
+        body["meta"] = system_meta
+    return body
+
+
+class SuccessEnvelopeMiddleware(BaseHTTPMiddleware):
+    """2xx JSON 응답을 `{"data": <payload>}` envelope 으로 wrap (PR #49)
+    + 모든 envelope 응답의 meta 에 시스템 필드 (`requested_at`,
+    `request_id`) 자동 주입 (본 PR — 응답 meta 확장).
+
+    예외 (비적용 — 본 PR 도 동일 skip 로직 재사용, 신규 skip 0):
     - 4xx/5xx — handler 가 이미 envelope 처리 (PR #41/#42/#45/#46/#47/#48)
     - 204 No Content — body 없음
     - non-JSON content-type — HTML / stream / binary
     - OAUTH2_EXCEPTION_PATHS — RFC 6749 표준 응답 (`/users/token`)
+
+    이미 envelope (`{data, ...}`) 인 응답은 PR #52 idempotent 룰 유지 (data
+    이중 wrap X) + 본 PR meta 만 setdefault 로 union (pagination 필드 보호).
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -179,19 +217,16 @@ class SuccessEnvelopeMiddleware(BaseHTTPMiddleware):
                 media_type=content_type,
             )
 
-        # PR #52 idempotent: 이미 envelope 형식 (dict + data 키) 이면 그대로 통과.
-        # pagination meta envelope ({data, meta}) 등 라우터가 직접 envelope 을
-        # 구성한 경우 이중 wrap 방지.
+        # PR #52 idempotent: 이미 envelope 형식 (dict + data 키) 이면 data
+        # 이중 wrap 은 회피하고, 본 PR 시스템 meta 만 setdefault 로 union.
+        # pagination meta envelope ({data, meta}) 의 기존 키 보호.
         if isinstance(payload, dict) and "data" in payload:
-            return Response(
-                content=body,
-                status_code=response.status_code,
-                headers=dict(response.headers),
-                media_type=content_type,
-            )
+            payload = _inject_system_meta(payload)
+        else:
+            # 단일 객체 응답: envelope wrap + system meta 주입
+            payload = {"data": payload, "meta": _build_system_meta()}
 
-        # envelope wrap
-        wrapped = json.dumps({"data": payload}, ensure_ascii=False).encode("utf-8")
+        wrapped = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         # content-length / content-type 은 starlette Response 가 재계산
         new_headers = {
             k: v

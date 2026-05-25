@@ -101,18 +101,26 @@ class ValidationErrorEnvelope(BaseModel):
     detail: ValidationErrorDetail
 
 
-class PaginationMeta(BaseModel):
-    """페이징 meta — offset / page 모드 양쪽 표현 (PR #52 도입, 듀얼 모드 확장).
+class ResponseMeta(BaseModel):
+    """success envelope 의 meta union dict.
 
-    offset 모드: `{total, skip, limit}` — PR #52 동일.
-    page 모드: `{total, page, per_page, total_pages}` — page 기반 듀얼 모드.
+    pagination 필드 (PR #52, 듀얼 모드) 와 시스템 필드 (본 PR — 응답 meta
+    확장) 가 동일 dict 에 union. 모든 필드 Optional — 적용 가능한 필드만
+    응답에 직렬화 (Option A: 단일 모델 + Optional 필드).
 
-    `app/core/pagination.py::build_meta` 가 mode 별 필요한 키만 채워 응답에
-    직렬화 — Pydantic 모델은 검증/스키마 표현만 담당 (모든 필드 Optional,
-    OpenAPI 에는 양쪽 표현 가능). Option A (단일 모델 + Optional 필드) 채택.
+    pagination (offset 모드): `{total, skip, limit}` — PR #52 동일.
+    pagination (page 모드): `{total, page, per_page, total_pages}`.
+    시스템 (본 PR): `requested_at` (UTC ISO8601), `request_id` (PR #32
+    contextvar). 단일 객체 응답에서는 pagination 필드 omit, 시스템 필드만
+    노출. list 응답에서는 양쪽 union.
+
+    `app/core/pagination.py::build_meta` 가 pagination mode 별 필요한 키만
+    채우고, `SuccessEnvelopeMiddleware` 가 시스템 필드를 setdefault 로
+    union (pagination 필드 보호).
     """
 
-    total: int
+    # pagination (PR #52)
+    total: int | None = None
     # offset 모드 필드
     skip: int | None = None
     limit: int | None = None
@@ -120,18 +128,40 @@ class PaginationMeta(BaseModel):
     page: int | None = None
     per_page: int | None = None
     total_pages: int | None = None
+    # 시스템 필드 (본 PR — 응답 meta 확장)
+    requested_at: str | None = None
+    request_id: str | None = None
+
+
+# 하위 호환 alias — 기존 import 경로 (`from app.core.openapi import
+# PaginationMeta`) 보존. 새 코드는 `ResponseMeta` 사용 권장.
+PaginationMeta = ResponseMeta
 
 
 class PaginatedResponse(BaseModel, Generic[T]):
-    """list endpoint 응답 envelope (PR #52, 듀얼 모드 확장).
+    """list endpoint 응답 envelope (PR #52, 듀얼 모드 확장 + 본 PR meta 통합).
 
-    응답 형식: `{"data": [...T], "meta": {...PaginationMeta}}` — middleware /
+    응답 형식: `{"data": [...T], "meta": {...ResponseMeta}}` — middleware /
     OpenAPI customizer 의 idempotent 룰 (응답 body / schema 가 이미 `data` 키
-    보유 시 wrap skip) 로 이중 wrap 회피. meta 는 mode 별 필드 집합 가변.
+    보유 시 wrap skip) 로 이중 wrap 회피. meta 는 pagination + 시스템 필드
+    union (모두 Optional).
     """
 
     data: list[T]
-    meta: PaginationMeta
+    meta: ResponseMeta
+
+
+class EnvelopedResponse(BaseModel, Generic[T]):
+    """단일 객체 응답 envelope — middleware 자동 주입 대상 (본 PR).
+
+    응답 형식: `{"data": T, "meta": {requested_at, request_id}}` —
+    pagination 필드는 단일 응답에서 omit. response_model 강제는 옵션 —
+    라우터는 기존처럼 payload 만 반환하고 middleware 가 envelope + meta
+    자동 주입 (라우터 변경 0).
+    """
+
+    data: T
+    meta: ResponseMeta | None = None
 
 
 _HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
@@ -178,7 +208,12 @@ def customize_openapi(app: FastAPI) -> dict[str, Any]:
 def _register_envelope_components(schema: dict[str, Any]) -> None:
     """components/schemas 에 envelope 모델 추가 (Generic SuccessEnvelope /
     PaginatedResponse 제외 — 인스턴스화된 형태가 paths 안에 inline 또는
-    `$ref` 로 들어가므로 별도 등록 불필요)."""
+    `$ref` 로 들어가므로 별도 등록 불필요).
+
+    본 PR: `ResponseMeta` 등록 (PaginationMeta alias 도 동일 이름 유지로 backward
+    compat). `_ensure_meta_in_schema` 가 단일 객체 응답 schema 에 `meta` 추가
+    시 본 컴포넌트를 `$ref` 로 참조.
+    """
     components = schema.setdefault("components", {}).setdefault("schemas", {})
     for model in (
         ErrorDetail,
@@ -186,7 +221,7 @@ def _register_envelope_components(schema: dict[str, Any]) -> None:
         ValidationErrorItem,
         ValidationErrorDetail,
         ValidationErrorEnvelope,
-        PaginationMeta,
+        ResponseMeta,
     ):
         components[model.__name__] = model.model_json_schema(
             ref_template="#/components/schemas/{model}"
@@ -220,14 +255,19 @@ def _wrap_success_responses(schema: dict[str, Any]) -> None:
 def _wrap_response_content(
     response: dict[str, Any], components: dict[str, Any]
 ) -> None:
-    """단일 response object 의 content/schema 를 {"data": <원본>} 으로 wrap.
+    """단일 response object 의 content/schema 를 {"data": <원본>, "meta":
+    ResponseMeta} 로 wrap.
 
-    PR #52 idempotent: 이미 `data` property 를 가진 schema 는 그대로 통과
-    (PaginatedResponse[T] 등 라우터가 직접 envelope 을 구성한 경우).
+    PR #52 idempotent: 이미 `data` property 를 가진 schema 는 wrap skip,
+    `meta` 만 누락 시 보강 (PaginatedResponse[T] 등 라우터가 직접 envelope
+    을 구성한 경우 데이터는 그대로 두고 meta 만 일관 보장).
 
     PR #62 (OpenAPI examples): schema wrap 시 inner example 도 `{"data": ...}` 로
     함께 wrap (idempotent — 이미 envelope 형식이면 skip). 라우터가 `responses=`
     에 envelope 형식 example 을 직접 적시한 경우 이중 wrap 방지.
+
+    본 PR: 신규 wrap 시 `meta: ResponseMeta` 필드 동시 주입 + 이미 envelope
+    인 경우 `_ensure_meta_in_schema` 로 누락된 meta 보강.
     """
     content = response.get("content", {})
     for media_obj in content.values():
@@ -235,15 +275,42 @@ def _wrap_response_content(
             continue
         original = media_obj["schema"]
         if _schema_has_data_property(original, components):
+            _ensure_meta_in_schema(original, components)
             continue
         media_obj["schema"] = {
             "type": "object",
             "required": ["data"],
-            "properties": {"data": original},
+            "properties": {
+                "data": original,
+                "meta": {"$ref": "#/components/schemas/ResponseMeta"},
+            },
         }
         # PR #62: inner example 을 envelope 으로 wrap (idempotent)
         if "example" in media_obj and not _example_is_wrapped(media_obj["example"]):
             media_obj["example"] = {"data": media_obj["example"]}
+
+
+def _ensure_meta_in_schema(schema: dict[str, Any], components: dict[str, Any]) -> None:
+    """envelope 이지만 meta 가 누락된 schema 에 `meta: ResponseMeta` 추가 (본 PR).
+
+    `$ref` 는 components 의 target schema 를 직접 수정 — middleware 가 모든
+    success 응답에 meta 를 일관 주입하므로 OpenAPI 도 동일하게 표현. union
+    (`oneOf`/`anyOf`) 멤버는 재귀로 처리.
+    """
+    if "$ref" in schema:
+        ref_name = schema["$ref"].rsplit("/", 1)[-1]
+        target = components.get(ref_name)
+        if target is None:
+            return
+        properties = target.setdefault("properties", {})
+        properties.setdefault("meta", {"$ref": "#/components/schemas/ResponseMeta"})
+        return
+    for member in schema.get("oneOf", []) + schema.get("anyOf", []):
+        _ensure_meta_in_schema(member, components)
+    if "properties" in schema:
+        schema["properties"].setdefault(
+            "meta", {"$ref": "#/components/schemas/ResponseMeta"}
+        )
 
 
 def _example_is_wrapped(example: Any) -> bool:
