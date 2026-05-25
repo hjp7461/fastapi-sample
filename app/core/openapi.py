@@ -8,7 +8,8 @@ OpenAPI dict 를 후처리한다:
   1) components/schemas 에 envelope Pydantic 모델 등록
   2) 모든 2xx success 응답 → {"data": <원본 schema>} wrap
      (204 No Content + OAUTH2_EXCEPTION_PATHS RFC 6749 제외)
-  3) 모든 endpoint 에 401/403/404/400/422 ErrorEnvelope 일괄 주입
+  3) endpoint x status 정확 매핑 (`app.core.openapi_status`) — 실제 응답 가능한
+     error status 만 ErrorEnvelope 로 주입 (PR #51 의 over-spec 정확화)
 
 OAUTH2_EXCEPTION_PATHS 는 `app.core.middleware` 의 frozenset 을 그대로 재사용 —
 middleware ↔ OpenAPI 단일 진실원 (정책 변경 시 한 곳만 수정).
@@ -18,9 +19,11 @@ from typing import Any, Generic, TypeVar
 
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
+from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
 from app.core.middleware import OAUTH2_EXCEPTION_PATHS
+from app.core.openapi_status import resolve_status_codes
 
 T = TypeVar("T")
 
@@ -88,15 +91,15 @@ class PaginatedResponse(BaseModel, Generic[T]):
 
 _HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 
-_STANDARD_ERROR_RESPONSES: dict[str, tuple[str, str]] = {
-    "400": ("ErrorEnvelope", "Bad Request — domain validation or business logic error"),
-    "401": (
+_ERROR_RESPONSE_META: dict[int, tuple[str, str]] = {
+    400: ("ErrorEnvelope", "Bad Request — domain validation or business logic error"),
+    401: (
         "ErrorEnvelope",
         "Unauthorized — invalid/expired token or inactive account",
     ),
-    "403": ("ErrorEnvelope", "Forbidden — insufficient permissions"),
-    "404": ("ErrorEnvelope", "Not Found — resource missing"),
-    "422": (
+    403: ("ErrorEnvelope", "Forbidden — insufficient permissions"),
+    404: ("ErrorEnvelope", "Not Found — resource missing"),
+    422: (
         "ValidationErrorEnvelope",
         "Unprocessable Entity — Pydantic input validation",
     ),
@@ -121,7 +124,7 @@ def customize_openapi(app: FastAPI) -> dict[str, Any]:
 
     _register_envelope_components(schema)
     _wrap_success_responses(schema)
-    _inject_error_responses(schema)
+    _inject_error_responses(schema, app)
 
     app.openapi_schema = schema
     return schema
@@ -210,23 +213,36 @@ def _schema_has_data_property(
     return "data" in schema.get("properties", {})
 
 
-def _inject_error_responses(schema: dict[str, Any]) -> None:
-    """모든 endpoint 에 표준 error envelope responses 일괄 주입.
+def _inject_error_responses(schema: dict[str, Any], app: FastAPI) -> None:
+    """endpoint x status 정확 매핑으로 ErrorEnvelope responses 주입.
+
+    `resolve_status_codes(route)` (app/core/openapi_status.py) 가 endpoint 별
+    실제 응답 가능한 status set 을 도출하고, 본 함수는 해당 status 만 스키마에
+    주입한다. PR #51 의 일괄 주입에서 over-spec 제거.
 
     - 401/403/404/400 → ErrorEnvelope
     - 422 → ValidationErrorEnvelope (errors 배열 포함)
-    - 기존 응답 (FastAPI default 422 등) 은 envelope 으로 덮어쓰기 (단일 진실원).
+    - 매핑되지 않은 endpoint (예: `/`) 는 error response 미주입.
     """
-    for _path, methods in schema.get("paths", {}).items():
+    route_status_map: dict[tuple[str, str], set[int]] = {}
+    for route in app.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        codes = resolve_status_codes(route)
+        for method in route.methods:
+            route_status_map[(route.path, method.lower())] = codes
+
+    for path, methods in schema.get("paths", {}).items():
         for method, op in methods.items():
             if method.lower() not in _HTTP_METHODS:
                 continue
+            codes = route_status_map.get((path, method.lower()), set())
             responses = op.setdefault("responses", {})
-            for status_code, (
-                envelope_name,
-                description,
-            ) in _STANDARD_ERROR_RESPONSES.items():
-                responses[status_code] = {
+            for status_code, meta in _ERROR_RESPONSE_META.items():
+                if status_code not in codes:
+                    continue
+                envelope_name, description = meta
+                responses[str(status_code)] = {
                     "description": description,
                     "content": {
                         "application/json": {
