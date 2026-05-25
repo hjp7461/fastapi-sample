@@ -5,7 +5,7 @@
 import os
 
 from dotenv import load_dotenv
-from pydantic import field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 # .env 파일 로드
@@ -55,6 +55,25 @@ class Settings(BaseSettings):
         "http://localhost:8000",  # FastAPI 앱
     ]
 
+    # list endpoint 페이징 정책 (PR #52 / PR #64 후속).
+    # default 는 자원별, max 는 DoS 가드 단일 기준.
+    # offset 모드 limit + page 모드 per_page 양쪽에 동일 max 적용.
+    USER_LIST_DEFAULT_LIMIT: int = Field(
+        default=100,
+        gt=0,
+        description="GET /users/ 의 limit default (운영자 정책 — 예: 50/100/200)",
+    )
+    PRODUCT_LIST_DEFAULT_LIMIT: int = Field(
+        default=100,
+        gt=0,
+        description="GET /products/ 의 limit default — 카탈로그 크기 정책",
+    )
+    LIST_MAX_LIMIT: int = Field(
+        default=1000,
+        gt=0,
+        description="모든 list endpoint 의 limit / per_page 상한 (DoS 가드)",
+    )
+
     @field_validator("BCRYPT_ROUNDS")
     @classmethod
     def validate_bcrypt_rounds(cls, v: int) -> int:
@@ -82,6 +101,19 @@ class Settings(BaseSettings):
         if lower not in allowed:
             raise ValueError(f"LOG_FORMAT must be one of {sorted(allowed)}, got {v!r}")
         return lower
+
+    @model_validator(mode="after")
+    def _validate_list_limits(self) -> "Settings":
+        """자원별 default ≤ 공통 max — 잘못된 설정 fail-fast."""
+        for name, value in (
+            ("USER_LIST_DEFAULT_LIMIT", self.USER_LIST_DEFAULT_LIMIT),
+            ("PRODUCT_LIST_DEFAULT_LIMIT", self.PRODUCT_LIST_DEFAULT_LIMIT),
+        ):
+            if value > self.LIST_MAX_LIMIT:
+                raise ValueError(
+                    f"{name}={value} must be <= LIST_MAX_LIMIT={self.LIST_MAX_LIMIT}"
+                )
+        return self
 
     model_config = {"env_file": ".env", "case_sensitive": True}
 
