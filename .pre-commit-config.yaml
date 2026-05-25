@@ -15,6 +15,16 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  # PR #60 후속: secret scanning — 운영 secret 의 실수 commit 차단.
+  # default 룰셋 (AWS/GCP/Azure/Stripe/SSH 등 100+ 패턴). false-positive
+  # 발생 시 `.gitleaks.toml` allowlist (paths 기반) 또는 줄 끝에
+  # `# gitleaks:allow` 주석. 분기 1회 `pre-commit autoupdate` 로 rev 갱신
+  # (RUNBOOK §13.1).
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
