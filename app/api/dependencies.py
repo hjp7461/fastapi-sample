@@ -8,10 +8,17 @@ from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import PyJWTError
 
 from app.core.config import settings
+from app.core.context import user_id_var
 from app.core.exceptions import AuthenticationException, NotFoundException
 from app.di.providers import get_user_service
 from app.user.domain import User
 from app.user.service import UserService
+
+# A3 (PR #73) — starlette BaseHTTPMiddleware 가 inner task 의 contextvar 변경을
+# outer middleware 로 전파하지 않는 한계 회피. request.state.user_id 보조 채널로
+# 전달 → middleware `_build_system_meta` 가 fallback 으로 read.
+# loguru patcher / Sentry before_send 는 route task 내에서 호출되어
+# contextvar 가 정상 동작 (이중 채널이라 두 경로 모두 안전).
 
 # OAuth2 인증 설정
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/users/token")
@@ -22,6 +29,7 @@ _CREDENTIALS_FAIL_MESSAGE = "Could not validate credentials"
 
 
 async def get_current_user(
+    request: Request,
     token: str = Depends(oauth2_scheme),
     user_service: UserService = Depends(get_user_service),
 ) -> User:
@@ -50,6 +58,12 @@ async def get_current_user(
         # 메시지는 credentials 실패와 차별화 (클라이언트 재활성화 안내 분기 가능).
         raise AuthenticationException("Inactive user account")
 
+    # A3 (PR #73) — 인증 성공 시 이중 채널 user_id 전달.
+    # 1) contextvar: loguru patcher / Sentry before_send (route task 내).
+    # 2) request.state: middleware `_build_system_meta` (BaseHTTPMiddleware
+    #    의 contextvar task isolation 회피).
+    user_id_var.set(user.id)
+    request.state.user_id = user.id
     return user
 
 
@@ -86,4 +100,8 @@ async def get_optional_current_user(
         return None
     if not user.is_active:
         return None
+
+    # A3 (PR #73) — 인증 성공 시 이중 채널 user_id 전달 (get_current_user 참고).
+    user_id_var.set(user.id)
+    request.state.user_id = user.id
     return user
