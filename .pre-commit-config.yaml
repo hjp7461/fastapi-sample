@@ -38,3 +38,13 @@ repos:
         language: system
         pass_filenames: false
         types: [python]
+
+      # PR #58: uv 0.11.15 가 lockfile 에 deprecated [options] 섹션 자동 추가
+      # ("This has no effect ..." comment 명시). commit 시점에 자동 제거 —
+      # `git checkout uv.lock` 수동 회피 불필요. 변경 시 exit 1 (재커밋).
+      - id: normalize-uv-lock
+        name: remove [options] section from uv.lock
+        entry: python scripts/normalize_uv_lock.py
+        language: system
+        files: ^uv\.lock$
+        pass_filenames: false
