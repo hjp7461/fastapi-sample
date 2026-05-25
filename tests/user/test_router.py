@@ -686,3 +686,70 @@ async def test_inactive_user_message_differs_from_credentials_fail(
     assert inactive_body["message"] == "Inactive user account"
     assert invalid_body["message"] == "Could not validate credentials"
     assert inactive_body["message"] != invalid_body["message"]
+
+
+@pytest.mark.asyncio
+async def test_list_users_paginated_envelope(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+) -> None:
+    """PR #52: GET /users/ 응답이 `{data, meta: {total, skip, limit}}` 형식.
+
+    middleware idempotent 룰 (dict + data 키 → wrap skip) 회귀 가드 겸용:
+    응답의 `data` 가 list (UserSummary 배열) 이고 `meta` 는 동일 수준.
+    이중 wrap 이면 `data["data"]` 형태가 됨 → 즉시 fail.
+    """
+    response = await client.get(
+        "/api/v1/users/?skip=0&limit=20", headers=admin_auth_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "data" in body
+    assert "meta" in body
+    assert isinstance(body["data"], list)
+    assert body["meta"]["skip"] == 0
+    assert body["meta"]["limit"] == 20
+    assert body["meta"]["total"] >= 1  # admin 본인 최소 1
+
+
+@pytest.mark.parametrize(
+    "params,expected_status",
+    [
+        ({"skip": -1}, 422),
+        ({"limit": 0}, 422),
+        ({"limit": 1001}, 422),
+        ({"skip": 0, "limit": 1000}, 200),  # 경계값 OK
+    ],
+)
+@pytest.mark.asyncio
+async def test_list_users_query_constraints(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    params: dict[str, int],
+    expected_status: int,
+) -> None:
+    """PR #52: skip≥0, 1≤limit≤1000 Query 제약 회귀 가드 (DoS / 무효 입력)."""
+    response = await client.get(
+        "/api/v1/users/", headers=admin_auth_headers, params=params
+    )
+    assert response.status_code == expected_status
+    if expected_status == 422:
+        assert response.json()["detail"]["code"] == "request_validation_error"
+
+
+@pytest.mark.asyncio
+async def test_list_users_meta_total_matches_actual_count(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+    test_user: dict[str, Any],
+) -> None:
+    """PR #52: meta.total 이 실제 DB 행 수와 일치 — 빈 결과나 다중 사용자 모두."""
+    response = await client.get(
+        "/api/v1/users/?skip=0&limit=1000", headers=admin_auth_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    # total 이 정수이고, data 길이와 일치 (limit=1000 이므로 모든 행 포함)
+    assert isinstance(body["meta"]["total"], int)
+    assert body["meta"]["total"] == len(body["data"])
+    assert body["meta"]["total"] >= 2  # admin + test_user

@@ -126,9 +126,13 @@ class UserService:
 
         return await self.user_repository.delete(user_id)
 
-    async def list_users(self, skip: int = 0, limit: int = 100) -> list[User]:
-        """사용자 목록을 조회합니다."""
-        return await self.user_repository.list(skip, limit)
+    async def list_users(
+        self, skip: int = 0, limit: int = 100
+    ) -> tuple[list[User], int]:
+        """사용자 목록 + 전체 카운트 (pagination meta 용, PR #52)."""
+        items = await self.user_repository.list(skip, limit)
+        total = await self.user_repository.count()
+        return items, total
 
     def create_access_token_for_user(
         self, user: User | int, expires_delta: timedelta | None = None

@@ -179,6 +179,17 @@ class SuccessEnvelopeMiddleware(BaseHTTPMiddleware):
                 media_type=content_type,
             )
 
+        # PR #52 idempotent: 이미 envelope 형식 (dict + data 키) 이면 그대로 통과.
+        # pagination meta envelope ({data, meta}) 등 라우터가 직접 envelope 을
+        # 구성한 경우 이중 wrap 방지.
+        if isinstance(payload, dict) and "data" in payload:
+            return Response(
+                content=body,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=content_type,
+            )
+
         # envelope wrap
         wrapped = json.dumps({"data": payload}, ensure_ascii=False).encode("utf-8")
         # content-length / content-type 은 starlette Response 가 재계산

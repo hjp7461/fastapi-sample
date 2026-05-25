@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.product.domain import NewProduct, Product, ProductCategory
@@ -132,6 +132,20 @@ class ProductRepository:
 
         result = await self.session.execute(query)
         return [self._to_domain(product) for product in result.scalars().all()]
+
+    async def count(
+        self,
+        category: ProductCategory | None = None,
+        is_active: bool | None = None,
+    ) -> int:
+        """필터 적용 후 상품 수 — pagination meta 의 total (PR #52)."""
+        query = select(func.count()).select_from(ProductModel)
+        if category:
+            query = query.where(ProductModel.category == category)
+        if is_active is not None:
+            query = query.where(ProductModel.is_active == is_active)
+        result = await self.session.execute(query)
+        return result.scalar_one()
 
     async def update_inventory(
         self, product_id: int, quantity_change: int

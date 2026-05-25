@@ -5,12 +5,13 @@ HTTP 요청을 처리하고 적절한 서비스를 호출합니다.
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.dependencies import get_current_user
 from app.api.permissions import require_admin, require_self_or_admin
 from app.core.exceptions import AuthenticationException
+from app.core.openapi import PaginatedResponse
 from app.di.providers import get_user_service
 from app.user.domain import User
 from app.user.schemas import (
@@ -88,16 +89,20 @@ async def get_user_by_id(
     return build_admin_view(user)
 
 
-@router.get("/", response_model=list[UserSummary])
+@router.get("/", response_model=PaginatedResponse[UserSummary])
 async def list_users(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0, description="페이징 offset (0 이상)"),
+    limit: int = Query(100, ge=1, le=1000, description="페이지 크기 (1~1000)"),
     _: Any = Depends(require_admin),
     user_service: UserService = Depends(get_user_service),
 ) -> Any:
     """사용자 목록을 조회합니다. 관리자 전용.
 
     응답은 `UserSummary` (PII 0건) — 목록 페이지에서 이메일/이름 무차별 노출 차단.
+    PR #52: pagination meta envelope (`{data, meta: {total, skip, limit}}`).
     """
-    users = await user_service.list_users(skip=skip, limit=limit)
-    return [build_summary(u) for u in users]
+    users, total = await user_service.list_users(skip=skip, limit=limit)
+    return {
+        "data": [build_summary(u) for u in users],
+        "meta": {"total": total, "skip": skip, "limit": limit},
+    }

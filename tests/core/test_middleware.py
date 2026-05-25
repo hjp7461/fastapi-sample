@@ -687,9 +687,39 @@ async def test_list_response_is_wrapped(
     client: AsyncClient,
     admin_auth_headers: dict[str, str],
 ) -> None:
-    """200 list 응답도 동일 envelope (list 가 data 값으로 들어감)."""
+    """200 list 응답이 envelope (data + meta — PR #52 의 pagination 적용).
+
+    PR #49: data 키로 wrap. PR #52: list endpoint 에 meta 추가 (idempotent).
+    """
     response = await client.get("/api/v1/users/", headers=admin_auth_headers)
     assert response.status_code == 200
     body = response.json()
-    assert set(body.keys()) == {"data"}
+    assert "data" in body
     assert isinstance(body["data"], list)
+    # PR #52: list endpoint 에는 meta 필드도 존재 (이중 wrap 없음)
+    assert "meta" in body
+
+
+@pytest.mark.asyncio
+async def test_success_envelope_idempotent_skips_already_wrapped(
+    client: AsyncClient,
+    admin_auth_headers: dict[str, str],
+) -> None:
+    """PR #52: 라우터가 직접 `{data, meta}` 형식 응답 시 middleware 이중 wrap 안 함.
+
+    이중 wrap 이면 `body["data"]["data"]` 가 list 가 되어야 함 → 즉시 실패.
+    정상이면 `body["data"]` 가 list 이고 `body["meta"]` 가 dict.
+    """
+    response = await client.get(
+        "/api/v1/users/?skip=0&limit=10", headers=admin_auth_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    # idempotent: data 가 list, meta 가 dict
+    assert isinstance(body["data"], list)
+    assert isinstance(body["meta"], dict)
+    # 이중 wrap 회귀 가드: data 가 list 라면 그 안의 원소들은 dict (UserSummary)
+    if body["data"]:
+        assert isinstance(body["data"][0], dict)
+        # 이중 wrap 시 data[0] 가 {"data": ..., "meta": ...} 형태가 됨
+        assert "data" not in body["data"][0] or "meta" not in body["data"][0]

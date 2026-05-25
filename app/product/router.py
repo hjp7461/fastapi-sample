@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import get_optional_current_user
 from app.api.permissions import require_staff_or_admin
+from app.core.openapi import PaginatedResponse
 from app.di.providers import get_product_service
 from app.product.domain import ProductCategory
 from app.product.schemas import (
@@ -78,11 +79,14 @@ async def delete_product(
 
 @router.get(
     "/",
-    response_model=list[ProductResponse] | list[ProductPublicView],
+    # union 을 PaginatedResponse 외부가 아닌 inner item T 에 둠 —
+    # Pydantic smart-mode 가 각 item 단위로 PublicView vs Response 매칭.
+    # PublicView 가 먼저 (좁은 스키마: inventory 없음 우선 매치).
+    response_model=PaginatedResponse[ProductPublicView | ProductResponse],
 )
 async def list_products(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0, description="페이징 offset (0 이상)"),
+    limit: int = Query(100, ge=1, le=1000, description="페이지 크기 (1~1000)"),
     category: ProductCategory | None = None,
     is_active: bool | None = Query(None, description="활성화 상태 필터링"),
     current_user: User | None = Depends(get_optional_current_user),
@@ -90,18 +94,22 @@ async def list_products(
 ) -> Any:
     """상품 목록을 조회합니다.
 
-    - viewer 가 staff/admin → `List[ProductResponse]` (전체)
-    - 그 외 (anonymous / 일반 사용자) → `List[ProductPublicView]` (inventory 제외)
+    - viewer 가 staff/admin → `PaginatedResponse[ProductResponse]` (전체)
+    - 그 외 (anonymous / 일반 사용자) → `PaginatedResponse[ProductPublicView]`
+      (inventory 제외)
+
+    PR #52: pagination meta envelope (`{data, meta: {total, skip, limit}}`).
     """
-    products = await product_service.list_products(
+    products, total = await product_service.list_products(
         skip=skip,
         limit=limit,
         category=category,
         is_active=is_active,
     )
+    meta = {"total": total, "skip": skip, "limit": limit}
     if current_user is not None and current_user.is_staff_or_above():
-        return products
-    return [build_public_view(p) for p in products]
+        return {"data": products, "meta": meta}
+    return {"data": [build_public_view(p) for p in products], "meta": meta}
 
 
 @router.patch("/{product_id}/inventory", response_model=ProductResponse)

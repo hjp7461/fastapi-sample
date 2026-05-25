@@ -69,11 +69,15 @@ class ProductService:
         limit: int = 100,
         category: ProductCategory | None = None,
         is_active: bool | None = None,
-    ) -> list[Product]:
-        """상품 목록을 조회합니다."""
-        return await self.product_repository.list(
+    ) -> tuple[list[Product], int]:
+        """상품 목록 + 필터 적용 후 카운트 (pagination meta 용, PR #52)."""
+        items = await self.product_repository.list(
             skip=skip, limit=limit, category=category, is_active=is_active
         )
+        total = await self.product_repository.count(
+            category=category, is_active=is_active
+        )
+        return items, total
 
     async def update_inventory(self, product_id: int, quantity_change: int) -> Product:
         """상품 재고를 업데이트합니다.
