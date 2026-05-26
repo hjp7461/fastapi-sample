@@ -40,3 +40,14 @@ def test_can_manage_products_delegates_to_staff_or_above() -> None:
     for role in UserRole:
         user = _user_with(role)
         assert user.can_manage_products() == user.is_staff_or_above()
+
+
+def test_user_can_delete_products_admin_only() -> None:
+    """D1 (PR #74): can_delete_products 는 ADMIN 만 True.
+
+    DELETE 는 되돌릴 수 없어 staff 운영 실수 위험성이 가장 높음.
+    `can_manage_products` (staff 이상) 와 대조 — 일상 운영 vs 위험 작업 분리.
+    """
+    assert _user_with(UserRole.ADMIN).can_delete_products() is True
+    assert _user_with(UserRole.STAFF).can_delete_products() is False
+    assert _user_with(UserRole.CUSTOMER).can_delete_products() is False

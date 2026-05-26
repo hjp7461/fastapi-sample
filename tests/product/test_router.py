@@ -524,19 +524,25 @@ async def test_update_inventory_as_staff(
 
 
 @pytest.mark.asyncio
-async def test_delete_product_as_staff(
+async def test_delete_product_as_staff_forbidden(
     client: AsyncClient,
     staff_auth_headers: dict[str, str],
     test_product: dict[str, Any],
 ) -> None:
-    """staff 의 상품 삭제 통과 (204)."""
+    """D1 (PR #74): staff 의 상품 삭제 거부 (403).
+
+    DELETE 는 되돌릴 수 없어 admin-only 로 격상됨. staff 는 create/update/
+    inventory 만 가능 — 운영 실수 위험성 차단. `authorization_error` code 명시.
+    """
     product_id = test_product["id"]
 
     response = await client.delete(
         f"/api/v1/products/{product_id}", headers=staff_auth_headers
     )
 
-    assert response.status_code == 204
+    assert response.status_code == 403
+    body = response.json()
+    assert body["detail"]["code"] == "authorization_error"
 
 
 @pytest.mark.asyncio
