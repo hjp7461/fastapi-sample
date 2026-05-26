@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     SENTRY_RELEASE: str | None = os.getenv("SENTRY_RELEASE") or None
     SENTRY_SEND_PII: bool = os.getenv("SENTRY_SEND_PII", "false").lower() == "true"
 
+    # audit log 설정 — app/audit/recorder.py::record_audit 가 참조.
+    # default True (운영 안전). 테스트는 fixture override 로 별도 검증.
+    # false 설정 시 record_audit() 가 즉시 return (no-op) — 본 작업 영향 0.
+    AUDIT_ENABLED: bool = os.getenv("AUDIT_ENABLED", "true").lower() == "true"
+
     # CORS 설정
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",  # React 앱

@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlmodel import SQLModel
 
 from alembic import context
+from app.audit import models as _audit_models  # noqa: F401 — 메타데이터 등록
 from app.core.config import settings
 from app.product import models as _product_models  # noqa: F401 — 메타데이터 등록
 from app.user import models as _user_models  # noqa: F401 — 메타데이터 등록
