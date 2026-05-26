@@ -70,5 +70,14 @@ class User:
         return self.role in (UserRole.STAFF, UserRole.ADMIN)
 
     def can_manage_products(self) -> bool:
-        """상품 관리 권한. STAFF 이상이면 가능."""
+        """상품 관리 권한 (생성/수정/재고). STAFF 이상이면 가능."""
         return self.is_staff_or_above()
+
+    def can_delete_products(self) -> bool:
+        """상품 영구 삭제 권한 (PR #74).
+
+        DELETE 는 되돌릴 수 없는 작업이라 staff 운영 실수 위험성이 가장 높음.
+        soft delete 미구현 상태에서는 ADMIN 만 허용. `can_manage_products` 와
+        대조 — 일상 운영 (staff) vs 위험 작업 (admin) 책임 분리.
+        """
+        return self.is_admin()

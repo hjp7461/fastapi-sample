@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import get_optional_current_user
-from app.api.permissions import require_staff_or_admin
+from app.api.permissions import require_admin, require_staff_or_admin
 from app.core.openapi import PaginatedResponse
 from app.core.openapi_examples import (
     ERROR_401_AUTHENTICATION,
@@ -210,10 +210,11 @@ async def update_product(
 @router.delete(
     "/{product_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="상품 삭제 (staff/admin)",
+    summary="상품 삭제 (관리자)",
     description=(
-        "상품을 삭제합니다 (hard delete). **staff 또는 admin** 만 "
-        "접근 가능 (그 외 403 envelope). "
+        "상품을 삭제합니다 (hard delete). **관리자 (admin)** 만 접근 가능 "
+        "(staff 도 403 envelope). DELETE 는 되돌릴 수 없어 운영 실수 "
+        "위험성이 가장 높아 admin-only 로 격상됨 (PR #74). "
         "성공 시 204 No Content (응답 body 없음)."
     ),
     tags=["products-admin"],
@@ -221,9 +222,9 @@ async def update_product(
 async def delete_product(
     product_id: int,
     product_service: ProductService = Depends(get_product_service),
-    current_user: Any = Depends(require_staff_or_admin),
+    current_user: Any = Depends(require_admin),
 ) -> None:
-    """상품을 삭제합니다. (staff/admin 전용)"""
+    """상품을 삭제합니다. (admin 전용)"""
     await product_service.delete_product(product_id)
 
 
